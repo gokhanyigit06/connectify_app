@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "784879008655",
+    "project_id": "connectifyapp-600c8",
+    "storage_bucket": "connectifyapp-600c8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:784879008655:android:8a6c565b4c90b37a9ce9fa",
+        "android_client_info": {
+          "package_name": "com.example.connectify_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyClsDNO_YXFAWhUsXAIXZwCoTrsCbpEWZo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
