@@ -36,7 +36,8 @@ dependencies:
   firebase_auth: ^4.17.7 # Kimlik doğrulama paketi
   cloud_firestore: ^4.15.7 # Firestore veritabanı paketi
   firebase_storage: ^11.6.8 # Depolama (görseller için) paketi
-
+  google_sign_in: ^6.1.6 # Bu satırı ekleyin
+  image_picker: ^1.0.7
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   
