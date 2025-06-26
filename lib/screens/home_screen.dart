@@ -5,8 +5,8 @@ import 'package:connectify_app/screens/people_screen.dart';
 import 'package:connectify_app/screens/liked_you_screen.dart';
 import 'package:connectify_app/screens/chats_screen.dart';
 import 'package:connectify_app/screens/live_chat_screen.dart';
-import 'package:provider/provider.dart'; // Provider paketi import edildi
-import 'package:connectify_app/providers/tab_navigation_provider.dart'; // Yeni provider import edildi
+import 'package:provider/provider.dart';
+import 'package:connectify_app/providers/tab_navigation_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // _selectedIndex artık doğrudan state tarafından yönetilmeyecek, Provider tarafından yönetilecek.
-  // int _selectedIndex = 1; // Bu satırı yorum satırı yapın veya silin
+  // int _selectedIndex = 1;
 
   // Alt navigasyon çubuğundaki her bir sekme için widget listesi
   static final List<Widget> _widgetOptions = <Widget>[
@@ -40,47 +40,41 @@ class _HomeScreenState extends State<HomeScreen> {
     return Consumer<TabNavigationProvider>(
       builder: (context, tabProvider, child) {
         return Scaffold(
-          body: Center(
-            child: _widgetOptions.elementAt(
-              tabProvider.currentIndex, // Indexi provider'dan alıyoruz
-            ),
+          body: IndexedStack(
+            // Burası değiştirildi: IndexedStack kullanılıyor
+            index: tabProvider.currentIndex, // Aktif sekmeyi belirle
+            children: _widgetOptions, // Tüm ekran widget'larını içer
           ),
           bottomNavigationBar: BottomNavigationBar(
             items: <BottomNavigationBarItem>[
               BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline), // Profil için çizgili ikon
-                activeIcon: Icon(Icons.person), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.person_outline),
+                activeIcon: Icon(Icons.person),
                 label: 'Profil',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.explore_outlined), // Keşfet için çizgili ikon
-                activeIcon: Icon(Icons.explore), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.explore_outlined),
+                activeIcon: Icon(Icons.explore),
                 label: 'Keşfet',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.group_outlined), // İnsanlar için çizgili ikon
-                activeIcon: Icon(Icons.group), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.group_outlined),
+                activeIcon: Icon(Icons.group),
                 label: 'İnsanlar',
               ),
               BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.favorite_border,
-                ), // Beğenenler için çizgili ikon
-                activeIcon: Icon(Icons.favorite), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.favorite_border),
+                activeIcon: Icon(Icons.favorite),
                 label: 'Beğenenler',
               ),
               BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.chat_bubble_outline,
-                ), // Sohbetler için çizgili ikon
-                activeIcon: Icon(Icons.chat_bubble), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.chat_bubble_outline),
+                activeIcon: Icon(Icons.chat_bubble),
                 label: 'Sohbetler',
               ),
               BottomNavigationBarItem(
-                icon: Icon(
-                  Icons.flash_on_outlined,
-                ), // Canlı Sohbet için çizgili ikon (Parlaklık, hız)
-                activeIcon: Icon(Icons.flash_on), // Seçildiğinde dolu ikon
+                icon: Icon(Icons.flash_on_outlined),
+                activeIcon: Icon(Icons.flash_on),
                 label: 'Canlı Sohbet',
               ),
             ],
@@ -88,8 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 tabProvider.currentIndex, // Indexi provider'dan alıyoruz
             selectedItemColor: Theme.of(context).primaryColor,
             unselectedItemColor: Colors.grey,
-            onTap: (index) =>
-                _onItemTapped(index, tabProvider), // provider'ı da gönderiyoruz
+            onTap: (index) => _onItemTapped(index, tabProvider),
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.white,
           ),

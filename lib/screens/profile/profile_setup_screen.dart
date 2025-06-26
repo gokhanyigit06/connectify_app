@@ -5,6 +5,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:connectify_app/screens/home_screen.dart'; // Anasayfaya yönlendirme için
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
+import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
 
 class ProfileSetupScreen extends StatefulWidget {
   final Map<String, dynamic>?
@@ -25,12 +27,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   int? _selectedAge;
   List<String> _selectedInterests = [];
 
-  File? _profileImage; // Yeni seçilen ana profil fotoğrafı
-  String? _currentProfileImageUrl; // Mevcut profil fotoğrafının URL'si
+  File? _profileImageFile; // Yeni seçilen ana profil fotoğrafı (File objesi)
+  String?
+  _profileImageUrl; // Ana profil fotoğrafının URL'si (mevcut veya yeni yüklenen)
 
-  final List<File> _newOtherImages = []; // Yeni eklenen diğer fotoğraflar
-  final List<String> _currentOtherImageUrls =
-      []; // Mevcut diğer fotoğrafların URL'leri
+  // Diğer fotoğraflar için tek bir liste kullanıyoruz.
+  // İçinde hem File (yeni seçilenler) hem de String (mevcut URL'ler) tutabiliriz.
+  // Bu, yönetimi basitleştirir.
+  final List<dynamic> _otherImages = []; // File veya String URL tutacak
 
   final ImagePicker _picker = ImagePicker();
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -58,7 +62,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   @override
   void initState() {
     super.initState();
-    // Eğer initialData varsa, form alanlarını doldur
     if (widget.initialData != null) {
       _nameController.text = widget.initialData!['name'] ?? '';
       _bioController.text = widget.initialData!['bio'] ?? '';
@@ -67,8 +70,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       _selectedInterests = List<String>.from(
         widget.initialData!['interests'] ?? [],
       );
-      _currentProfileImageUrl = widget.initialData!['profileImageUrl'];
-      _currentOtherImageUrls.addAll(
+      _profileImageUrl = widget.initialData!['profileImageUrl'];
+
+      // Mevcut diğer fotoğraf URL'lerini _otherImages listesine ekle
+      _otherImages.addAll(
         List<String>.from(widget.initialData!['otherImageUrls'] ?? []),
       );
     }
@@ -85,31 +90,29 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Future<void> _pickImage(
     ImageSource source, {
     bool isProfileImage = true,
-    int? otherImageIndex,
+    int? existingImageIndex,
   }) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
       setState(() {
         if (isProfileImage) {
-          _profileImage = File(pickedFile.path);
-          _currentProfileImageUrl =
-              null; // Yeni resim seçilince eski URL'yi temizle
+          _profileImageFile = File(pickedFile.path);
+          _profileImageUrl = null; // Yeni resim seçilince eski URL'yi temizle
         } else {
-          if (otherImageIndex != null &&
-              otherImageIndex < _currentOtherImageUrls.length) {
-            // Mevcut bir diğer fotoğrafı değiştir
-            _currentOtherImageUrls[otherImageIndex] =
-                ''; // Eski URL'yi geçici olarak sil
-            _newOtherImages.add(File(pickedFile.path)); // Yeni resmi ekle
-          } else if (_newOtherImages.length + _currentOtherImageUrls.length <
-              5) {
-            // Yeni bir diğer fotoğraf ekle
-            _newOtherImages.add(File(pickedFile.path));
+          // Eğer mevcut bir yuvaya yeni fotoğraf ekleniyorsa veya değiştiriliyorsa
+          if (existingImageIndex != null &&
+              existingImageIndex < _otherImages.length) {
+            _otherImages[existingImageIndex] = File(
+              pickedFile.path,
+            ); // Mevcut fotoğrafı değiştir
+          } else if (_otherImages.length < 5) {
+            // Max 5 fotoğraf sınırı
+            _otherImages.add(File(pickedFile.path)); // Yeni fotoğraf ekle
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('En fazla 5 ek fotoğraf yükleyebilirsiniz.'),
-              ),
+            SnackBarService.showSnackBar(
+              context,
+              message: 'En fazla 5 ek fotoğraf yükleyebilirsiniz.',
+              type: SnackBarType.info,
             );
           }
         }
@@ -131,12 +134,21 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   // Profil Oluşturma/Kaydetme Fonksiyonu
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Lütfen tüm zorunlu alanları doldurun.',
+        type: SnackBarType.error,
+      );
       return;
     }
     // Profil oluşturuluyorsa profil resmi zorunlu
-    if (widget.initialData == null && _profileImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen bir profil fotoğrafı seçin.')),
+    if (widget.initialData == null &&
+        _profileImageFile == null &&
+        _profileImageUrl == null) {
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Lütfen bir profil fotoğrafı seçin.',
+        type: SnackBarType.error,
       );
       return;
     }
@@ -147,8 +159,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     final User? currentUser = _auth.currentUser;
     if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kullanıcı oturumu bulunamadı.')),
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Kullanıcı oturumu bulunamadı.',
+        type: SnackBarType.error,
       );
       setState(() {
         _isLoading = false;
@@ -157,27 +171,32 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
 
     try {
-      String? finalProfileImageUrl = _currentProfileImageUrl;
-      List<String> finalOtherImageUrls = List.from(
-        _currentOtherImageUrls.where((url) => url.isNotEmpty),
-      ); // Boş olanları (değiştirilenleri) atla
+      String? finalProfileImageUrl = _profileImageUrl; // Mevcut URL'yi koru
 
       // 1. Yeni Profil Fotoğrafını Yükle (varsa)
-      if (_profileImage != null) {
+      if (_profileImageFile != null) {
         final profileImageRef = _storage.ref().child(
           'user_profiles/${currentUser.uid}/profile.jpg',
         );
-        await profileImageRef.putFile(_profileImage!);
+        await profileImageRef.putFile(_profileImageFile!);
         finalProfileImageUrl = await profileImageRef.getDownloadURL();
       }
 
-      // 2. Yeni Diğer Fotoğrafları Yükle (varsa)
-      for (int i = 0; i < _newOtherImages.length; i++) {
-        final otherImageRef = _storage.ref().child(
-          'user_profiles/${currentUser.uid}/other_photo_${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
-        ); // Benzersiz isim
-        await otherImageRef.putFile(_newOtherImages[i]);
-        finalOtherImageUrls.add(await otherImageRef.getDownloadURL());
+      // 2. Diğer Fotoğrafları Yükle ve URL'leri Topla
+      List<String> finalOtherImageUrls = [];
+      for (int i = 0; i < _otherImages.length; i++) {
+        final item = _otherImages[i];
+        if (item is File) {
+          // Yeni seçilen File ise yükle
+          final otherImageRef = _storage.ref().child(
+            'user_profiles/${currentUser.uid}/other_photo_${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
+          );
+          await otherImageRef.putFile(item);
+          finalOtherImageUrls.add(await otherImageRef.getDownloadURL());
+        } else if (item is String && item.isNotEmpty) {
+          // Mevcut URL ise direkt ekle
+          finalOtherImageUrls.add(item);
+        }
       }
 
       // 3. Kullanıcı Bilgilerini Firestore'a Kaydet/Güncelle
@@ -191,34 +210,34 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         'bio': _bioController.text.trim(),
         'interests': _selectedInterests,
         'profileImageUrl': finalProfileImageUrl,
-        'otherImageUrls': finalOtherImageUrls,
+        'otherImageUrls': finalOtherImageUrls, // Güncellenmiş liste
         'location': 'Ankara, Türkiye', // Şimdilik sabit
         'isProfileCompleted': true,
-        'isPremium':
-            widget.initialData?['isPremium'] ??
-            false, // Mevcut premium durumunu koru
+        'isPremium': widget.initialData?['isPremium'] ?? false,
         'likesRemainingToday': widget.initialData?['likesRemainingToday'] ?? 20,
         'messagesRemainingToday':
             widget.initialData?['messagesRemainingToday'] ?? 5,
         'createdAt':
-            widget.initialData?['createdAt'] ??
-            FieldValue.serverTimestamp(), // Oluşturma tarihini koru
-        'updatedAt': FieldValue.serverTimestamp(), // Güncelleme tarihi ekle
-      }, SetOptions(merge: true)); // Mevcut belgeyi birleştirerek güncelle
+            widget.initialData?['createdAt'] ?? FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profil başarıyla kaydedildi!')),
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Profil başarıyla kaydedildi!',
+        type: SnackBarType.success,
       );
 
-      // Profil kaydedildikten sonra Anasayfaya yönlendir (veya önceki ekrana dön)
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const HomeScreen()),
         (Route<dynamic> route) => false,
       );
     } catch (e) {
       debugPrint("Profil kaydetme hatası: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Profil kaydedilirken bir hata oluştu: $e')),
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Profil kaydedilirken bir hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
       );
     } finally {
       setState(() {
@@ -228,12 +247,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   // Diğer fotoğrafı silme fonksiyonu
-  void _removeOtherImage(int index, {bool isNewImage = false}) {
+  void _removeOtherImage(int index) {
+    // isNewImage parametresi kaldırıldı
     setState(() {
-      if (isNewImage) {
-        _newOtherImages.removeAt(index);
-      } else {
-        _currentOtherImageUrls.removeAt(index);
+      if (index < _otherImages.length) {
+        _otherImages.removeAt(index);
       }
     });
   }
@@ -245,8 +263,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         title: Text(
           widget.initialData == null ? 'Profil Oluştur' : 'Profili Düzenle',
         ),
-        automaticallyImplyLeading:
-            widget.initialData != null, // Düzenleme modunda geri tuşu göster
+        automaticallyImplyLeading: widget.initialData != null,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -264,19 +281,22 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                             _showImageSourceDialog(isProfileImage: true),
                         child: CircleAvatar(
                           radius: 70,
-                          backgroundColor: Colors.grey[200],
-                          backgroundImage: _profileImage != null
-                              ? FileImage(_profileImage!)
-                              : (_currentProfileImageUrl != null
-                                    ? NetworkImage(_currentProfileImageUrl!)
+                          backgroundColor: AppColors.grey.withOpacity(
+                            0.2,
+                          ), // Renk paletinden
+                          backgroundImage: _profileImageFile != null
+                              ? FileImage(_profileImageFile!)
+                              : (_profileImageUrl != null
+                                    ? NetworkImage(_profileImageUrl!)
                                     : null),
                           child:
-                              _profileImage == null &&
-                                  _currentProfileImageUrl == null
+                              _profileImageFile == null &&
+                                  _profileImageUrl == null
                               ? Icon(
                                   Icons.camera_alt,
                                   size: 50,
-                                  color: Colors.grey[700],
+                                  color: AppColors
+                                      .secondaryText, // Renk paletinden
                                 )
                               : null,
                         ),
@@ -308,78 +328,84 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                             crossAxisSpacing: 10,
                             mainAxisSpacing: 10,
                           ),
-                      itemCount: 5, // 5 adet kutucuk
+                      itemCount: 5, // Her zaman 5 adet boş yuva göster
                       itemBuilder: (context, index) {
-                        bool isCurrent = index < _currentOtherImageUrls.length;
-                        bool isNew =
-                            index - _currentOtherImageUrls.length <
-                            _newOtherImages.length;
-                        File? newImage = isNew
-                            ? _newOtherImages[index -
-                                  _currentOtherImageUrls.length]
-                            : null;
-                        String? currentImageUrl = isCurrent
-                            ? _currentOtherImageUrls[index]
+                        bool hasImage = index < _otherImages.length;
+                        dynamic imageSource = hasImage
+                            ? _otherImages[index]
                             : null;
 
                         return Stack(
                           children: [
                             GestureDetector(
-                              onTap: () => _showImageSourceDialog(
-                                isProfileImage: false,
-                                otherImageIndex: index,
-                              ),
+                              onTap: () {
+                                // Eğer yuvada fotoğraf yoksa yeni seç, varsa değiştir
+                                if (!hasImage ||
+                                    imageSource is String &&
+                                        imageSource.isEmpty) {
+                                  _showImageSourceDialog(isProfileImage: false);
+                                } else {
+                                  _showImageSourceDialog(
+                                    isProfileImage: false,
+                                    existingImageIndex: index,
+                                  );
+                                }
+                              },
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.grey[200],
+                                  color: AppColors.grey.withOpacity(
+                                    0.2,
+                                  ), // Renk paletinden
                                   borderRadius: BorderRadius.circular(10),
-                                  image: newImage != null
-                                      ? DecorationImage(
-                                          image: FileImage(newImage),
-                                          fit: BoxFit.cover,
-                                        )
-                                      : (currentImageUrl != null &&
-                                                currentImageUrl.isNotEmpty
+                                  image: imageSource != null
+                                      ? (imageSource is File
                                             ? DecorationImage(
-                                                image: NetworkImage(
-                                                  currentImageUrl,
-                                                ),
+                                                image: FileImage(imageSource),
                                                 fit: BoxFit.cover,
                                               )
-                                            : null),
+                                            : (imageSource is String &&
+                                                      imageSource.isNotEmpty
+                                                  ? DecorationImage(
+                                                      image: NetworkImage(
+                                                        imageSource,
+                                                      ),
+                                                      fit: BoxFit.cover,
+                                                    )
+                                                  : null))
+                                      : null,
                                 ),
                                 child:
-                                    newImage == null &&
-                                        (currentImageUrl == null ||
-                                            currentImageUrl.isEmpty)
+                                    !hasImage ||
+                                        (imageSource is String &&
+                                            imageSource.isEmpty)
                                     ? Icon(
                                         Icons.add_a_photo,
                                         size: 30,
-                                        color: Colors.grey[700],
+                                        color: AppColors
+                                            .secondaryText, // Renk paletinden
                                       )
                                     : null,
                               ),
                             ),
                             // Silme butonu
-                            if ((newImage != null ||
-                                (currentImageUrl != null &&
-                                    currentImageUrl.isNotEmpty)))
+                            if (hasImage && imageSource is! String ||
+                                (imageSource is String &&
+                                    imageSource.isNotEmpty))
                               Positioned(
                                 top: 0,
                                 right: 0,
                                 child: GestureDetector(
-                                  onTap: () => _removeOtherImage(
-                                    index,
-                                    isNewImage: newImage != null,
-                                  ),
+                                  onTap: () => _removeOtherImage(index),
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      color: Colors.black54,
+                                      color: AppColors.black.withOpacity(
+                                        0.5,
+                                      ), // Renk paletinden
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: const Icon(
                                       Icons.close,
-                                      color: Colors.white,
+                                      color: AppColors.white, // Renk paletinden
                                       size: 20,
                                     ),
                                   ),
@@ -515,9 +541,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                           },
                           selectedColor: Theme.of(context).primaryColor,
                           labelStyle: TextStyle(
-                            color: isSelected ? Colors.black : Colors.black87,
+                            color: isSelected
+                                ? AppColors.black
+                                : AppColors.primaryText, // Renk paletinden
                           ),
-                          backgroundColor: Colors.grey[200],
+                          backgroundColor: AppColors.grey.withOpacity(
+                            0.2,
+                          ), // Renk paletinden
                         );
                       }).toList(),
                     ),
@@ -525,10 +555,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                     // --- Kaydet Butonu ---
                     ElevatedButton(
-                      onPressed:
-                          _saveProfile, // Fonksiyon adını _saveProfile olarak değiştirdim
+                      onPressed: _saveProfile,
                       child: _isLoading
-                          ? const CircularProgressIndicator(color: Colors.black)
+                          ? const CircularProgressIndicator(
+                              color: AppColors.black,
+                            ) // Renk paletinden
                           : Text(
                               widget.initialData == null
                                   ? 'Profili Oluştur'
@@ -545,7 +576,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   // Resim kaynağı seçimi (Galeri / Kamera) için diyalog
   void _showImageSourceDialog({
     required bool isProfileImage,
-    int? otherImageIndex,
+    int? existingImageIndex, // diğer fotoğraflar için
   }) {
     showModalBottomSheet(
       context: context,
@@ -562,7 +593,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   _pickImage(
                     ImageSource.gallery,
                     isProfileImage: isProfileImage,
-                    otherImageIndex: otherImageIndex,
+                    existingImageIndex: existingImageIndex,
                   );
                 },
               ),
@@ -574,7 +605,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   _pickImage(
                     ImageSource.camera,
                     isProfileImage: isProfileImage,
-                    otherImageIndex: otherImageIndex,
+                    existingImageIndex: existingImageIndex,
                   );
                 },
               ),

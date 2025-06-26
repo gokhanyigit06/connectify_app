@@ -8,7 +8,7 @@ import 'package:connectify_app/widgets/empty_state_widget.dart';
 import 'package:connectify_app/utils/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
-import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
+import 'package:connectify_app/services/snackbar_service.dart';
 
 class LikedYouScreen extends StatefulWidget {
   const LikedYouScreen({super.key});
@@ -57,9 +57,11 @@ class _LikedYouScreenState extends State<LikedYouScreen> {
           .where('likedId', isEqualTo: currentUser.uid)
           .get();
 
+      // **ÖNEMLİ DÜZELTME:** likerUids listesini benzersiz hale getiriyoruz
       List<String> likerUids = likedYouSnapshot.docs
           .map((doc) => doc['likerId'] as String)
-          .toList();
+          .toSet() // Burası eklendi: UID'leri benzersiz yapar
+          .toList(); // Tekrar listeye çevir
 
       if (likerUids.isEmpty) {
         setState(() {
@@ -86,7 +88,6 @@ class _LikedYouScreenState extends State<LikedYouScreen> {
     } catch (e) {
       debugPrint("LikedYouScreen: Veri çekilirken hata oluştu: $e");
       SnackBarService.showSnackBar(
-        // SnackBarService eklendi
         context,
         message: 'Seni beğenenleri yüklerken hata oluştu: ${e.toString()}',
         type: SnackBarType.error,
@@ -101,7 +102,6 @@ class _LikedYouScreenState extends State<LikedYouScreen> {
   void _upgradeToPremium() {
     debugPrint('LikedYouScreen: Premium\'a yükselt tıklandı.');
     SnackBarService.showSnackBar(
-      // SnackBarService eklendi
       context,
       message: 'Premium yükseltme ekranı buraya gelecek.',
       type: SnackBarType.info,
