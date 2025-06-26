@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:connectify_app/screens/single_chat_screen.dart'; // Tekil sohbet ekranı
+import 'package:firebase_auth/firebase_auth.dart'; // FirebaseAuth olarak düzeltildi
+import 'package:connectify_app/screens/single_chat_screen.dart';
+import 'package:connectify_app/widgets/empty_state_widget.dart';
+import 'package:connectify_app/utils/app_colors.dart';
+import 'package:provider/provider.dart';
+import 'package:connectify_app/providers/tab_navigation_provider.dart';
+import 'package:connectify_app/services/snackbar_service.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -12,11 +17,11 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth _auth =
+      FirebaseAuth.instance; // Hata düzeltmesi: FirebaseAueth -> FirebaseAuth
 
   bool _isLoading = false;
-  List<Map<String, dynamic>> _matchedUsers =
-      []; // Eşleşilen kullanıcıların profilleri
+  List<Map<String, dynamic>> _matchedUsers = [];
 
   @override
   void initState() {
@@ -24,7 +29,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
     _fetchMatches();
   }
 
-  // Eşleşmeleri ve eşleşilen kullanıcıların profillerini çeken fonksiyon
   Future<void> _fetchMatches() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
@@ -37,7 +41,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
 
     try {
-      // Mevcut kullanıcının user1Id veya user2Id olduğu eşleşmeleri çek
       QuerySnapshot matchesSnapshot = await _firestore
           .collection('matches')
           .where('user1Id', isEqualTo: currentUser.uid)
@@ -52,8 +55,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
       allMatchesDocs.addAll(matchesSnapshot.docs);
       allMatchesDocs.addAll(matchesSnapshot2.docs);
 
-      // Tekrar eden eşleşmeleri önlemek için (aynı eşleşme iki sorguda da gelebilir)
-      // Veya sadece user1Id ve user2Id çiftini unique hale getirmek için
       List<String> matchedUids = [];
       for (var doc in allMatchesDocs) {
         String user1Id = doc['user1Id'];
@@ -64,7 +65,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
           matchedUids.add(user1Id);
         }
       }
-      // Benzersiz hale getir
       matchedUids = matchedUids.toSet().toList();
 
       if (matchedUids.isEmpty) {
@@ -75,7 +75,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
         return;
       }
 
-      // Eşleşilen kullanıcıların profil verilerini çek
       List<Map<String, dynamic>> tempMatchedProfiles = [];
       for (String matchedUid in matchedUids) {
         DocumentSnapshot matchedUserProfile = await _firestore
@@ -94,8 +93,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
       });
     } catch (e) {
       debugPrint("ChatsScreen: Eşleşmeler çekilirken hata oluştu: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eşleşmeleri yüklerken hata oluştu: $e')),
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Eşleşmeleri yüklerken hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
       );
     } finally {
       setState(() {
@@ -104,7 +105,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
   }
 
-  // Sohbet öğesine tıklandığında
   void _onChatTapped(Map<String, dynamic> matchedUser) {
     debugPrint('ChatsScreen: Sohbet başlatılıyor: ${matchedUser['name']}');
     Navigator.of(context).push(
@@ -121,7 +121,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         title: const Text('Sohbetler'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search), // Sohbet arama
+            icon: const Icon(Icons.search),
             onPressed: () {
               debugPrint('ChatsScreen: Sohbet Ara tıklandı');
             },
@@ -131,21 +131,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _matchedUsers.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Henüz hiç eşleşmen yok.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _fetchMatches,
-                    child: const Text('Eşleşmeleri Yenile'),
-                  ),
-                ],
-              ),
+          ? EmptyStateWidget(
+              icon: Icons.chat_bubble_outline,
+              title: 'Henüz Kimseyle Eşleşmedin',
+              description:
+                  'Sohbet etmek için yeni eşleşmeler bulman gerekiyor! Keşfet ekranına giderek yeni kişilerle tanışmaya ne dersin?',
+              buttonText: 'Keşfetmeye Başla',
+              onButtonPressed: () {
+                Provider.of<TabNavigationProvider>(
+                  context,
+                  listen: false,
+                ).setIndex(1);
+              },
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16.0),
@@ -155,9 +152,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 final String name = matchedUser['name'] ?? 'Bilinmiyor';
                 final String profileImageUrl =
                     matchedUser['profileImageUrl'] ??
-                    'https://via.placeholder.com/150';
-                // Son mesajı ve zaman damgasını ileride Firestore'dan çekip buraya ekleyeceğiz
-
+                    'https://placehold.co/150x150/CCCCCC/000000?text=Profil';
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12.0),
                   elevation: 2,
@@ -178,14 +173,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       ),
                     ),
                     subtitle: Text(
-                      'Son mesaj buraya gelecek...', // İleride gerçek son mesaj
+                      'Son mesaj buraya gelecek...',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey[600]),
+                      style: TextStyle(color: AppColors.secondaryText),
                     ),
                     trailing: Text(
-                      'Şimdi', // İleride son mesajın zaman damgası
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      'Şimdi',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.secondaryText,
+                      ),
                     ),
                     onTap: () => _onChatTapped(matchedUser),
                   ),

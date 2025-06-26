@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:connectify_app/widgets/profile_card_widget.dart'; // ProfileCardWidget'ı import et
-import 'package:connectify_app/screens/profile/user_profile_screen.dart'; // AppBar'daki profil ikonu için
+import 'package:connectify_app/widgets/profile_card_widget.dart';
+import 'package:connectify_app/screens/profile/user_profile_screen.dart';
+import 'package:connectify_app/widgets/empty_state_widget.dart';
+import 'package:connectify_app/utils/app_colors.dart';
+import 'package:provider/provider.dart';
+import 'package:connectify_app/providers/tab_navigation_provider.dart';
+import 'package:connectify_app/services/snackbar_service.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -14,100 +19,157 @@ class DiscoverScreen extends StatefulWidget {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  List<DocumentSnapshot> _userProfiles = []; // Çekilen kullanıcı profilleri
-  bool _isLoading = false; // Yüklenme durumu için
+  List<DocumentSnapshot> _userProfiles = [];
+  bool _isLoading = false;
+
+  DocumentSnapshot? _lastDocument;
+  final List<String> _seenUserIds = [];
+
+  bool _noMoreProfilesToFetch =
+      false; // Firebase'den çekilecek başka profil kalmadığını belirtir
 
   @override
   void initState() {
     super.initState();
-    _fetchUserProfiles();
+    _fetchUserProfiles(isInitialLoad: true);
   }
 
-  // Kullanıcı profillerini Firestore'dan çeken fonksiyon
-  Future<void> _fetchUserProfiles() async {
+  Future<void> _fetchUserProfiles({
+    bool isInitialLoad = false,
+    bool isRefresh = false,
+  }) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       debugPrint('DiscoverScreen: Kullanıcı giriş yapmamış. Profil çekilmedi.');
       return;
     }
 
+    if (isRefresh) {
+      _userProfiles.clear();
+      _seenUserIds.clear();
+      _lastDocument = null;
+      _noMoreProfilesToFetch = false; // Yenilemede sıfırla
+      debugPrint(
+        'DiscoverScreen: Yenileme işlemi başlatıldı. Her şey sıfırlandı.',
+      );
+    }
+
+    if (_isLoading && !isRefresh) {
+      // Eğer zaten yükleniyorsa ve bu bir yenileme isteği değilse, tekrar çekim yapma
+      debugPrint(
+        'DiscoverScreen: Zaten profiller yükleniyor veya listeye yeni eklendi. Tekrar çekim yapılmadı.',
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
-    }); // Yükleme başladı
+    });
+    debugPrint(
+      'DiscoverScreen: _fetchUserProfiles başlatıldı. isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch',
+    );
 
     try {
-      // Kendi profilimiz hariç ilk 10 profili çekelim
-      QuerySnapshot querySnapshot = await _firestore
+      Query query = _firestore
           .collection('users')
-          .where(
-            'uid',
-            isNotEqualTo: currentUser.uid,
-          ) // Kendi profilimizi gösterme
-          .limit(10) // İlk 10 profili çekelim şimdilik
-          .get();
+          .where('uid', isNotEqualTo: currentUser.uid)
+          .orderBy('uid', descending: true)
+          .orderBy('createdAt', descending: true)
+          .limit(10); // Her seferde 10 profil çek
 
-      setState(() {
-        _userProfiles = querySnapshot
-            .docs; // Listeyi yeni çekilen profillerle tamamen değiştir
-      });
-
-      if (_userProfiles.isEmpty) {
-        debugPrint('DiscoverScreen: Keşfedilecek yeni profil bulunamadı.');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Keşfedilecek yeni profil bulunamadı.')),
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+        debugPrint(
+          'DiscoverScreen: Pagination ile _lastDocument sonrası çekiliyor: ${_lastDocument!.id}',
+        );
+      } else {
+        debugPrint(
+          'DiscoverScreen: İlk çekim veya sıfırlanmış çekim yapılıyor.',
         );
       }
+
+      QuerySnapshot querySnapshot = await query.get();
+      debugPrint(
+        'DiscoverScreen: Firestore sorgu sonucu - ${querySnapshot.docs.length} yeni belge çekildi.',
+      );
+
+      if (querySnapshot.docs.isEmpty) {
+        _noMoreProfilesToFetch = true;
+        debugPrint(
+          'DiscoverScreen: Firestore\'dan çekilecek yeni profil bulunamadı.',
+        );
+        if (_userProfiles.isEmpty) {
+          // Sadece UI'daki listemiz boşsa SnackBar göster
+          SnackBarService.showSnackBar(
+            context,
+            message: 'Keşfedilecek yeni profil kalmadı.',
+            type: SnackBarType.info,
+          );
+        }
+      } else {
+        _noMoreProfilesToFetch = false;
+      }
+
+      setState(() {
+        // Yeni çekilen profilleri mevcut listeye ekle
+        // Aynı profillerin tekrar gelmemesi için pagination zaten çalışıyor olmalı.
+        _userProfiles.addAll(querySnapshot.docs);
+        if (querySnapshot.docs.isNotEmpty) {
+          _lastDocument = querySnapshot.docs.last;
+          debugPrint(
+            'DiscoverScreen: _lastDocument güncellendi: ${_lastDocument!.id}',
+          );
+        }
+        debugPrint(
+          'DiscoverScreen: Güncel profil sayısı: ${_userProfiles.length}',
+        );
+      });
     } catch (e) {
       debugPrint(
-        "DiscoverScreen: Kullanıcı profilleri çekilirken hata oluştu: $e",
+        "DiscoverScreen: Kullanıcı profilleri çekilirken HATA oluştu: $e",
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kullanıcılar yüklenirken hata oluştu: $e')),
+      _noMoreProfilesToFetch = true;
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Profiller yüklenirken hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
       );
     } finally {
       setState(() {
         _isLoading = false;
-      }); // Yükleme bitti
+      });
+      debugPrint(
+        'DiscoverScreen: _fetchUserProfiles tamamlandı. Final isLoading: $_isLoading, Final noMoreProfilesToFetch: $_noMoreProfilesToFetch',
+      );
     }
   }
 
-  // Beğenme (Like) işlemi
   void _handleLike(String targetUserId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
     debugPrint('DiscoverScreen: Beğenildi: $targetUserId');
+    _seenUserIds.add(targetUserId); // Görülenler listesine ekle
 
     try {
-      // 1. Beğeni bilgisini Firestore'daki 'likes' koleksiyonuna kaydet
       await _firestore.collection('likes').add({
-        'likerId': currentUser.uid, // Beğenen kişi
-        'likedId': targetUserId, // Beğenilen kişi
-        'timestamp': FieldValue.serverTimestamp(), // Beğenme zamanı
+        'likerId': currentUser.uid,
+        'likedId': targetUserId,
+        'timestamp': FieldValue.serverTimestamp(),
       });
       debugPrint('DiscoverScreen: Beğeni Firestore\'a kaydedildi.');
 
-      // 2. Karşılıklı beğeni kontrolü (Eşleşme için)
       QuerySnapshot reciprocalLike = await _firestore
           .collection('likes')
-          .where(
-            'likerId',
-            isEqualTo: targetUserId,
-          ) // Beğenen kişi targetUserId
-          .where(
-            'likedId',
-            isEqualTo: currentUser.uid,
-          ) // Beğenilen kişi currentUser
+          .where('likerId', isEqualTo: targetUserId)
+          .where('likedId', isEqualTo: currentUser.uid)
           .get();
 
       if (reciprocalLike.docs.isNotEmpty) {
-        // Karşılıklı beğeni var, eşleşme oluştu!
         debugPrint(
           'DiscoverScreen: Eşleşme oluştu: ${currentUser.uid} ve $targetUserId',
         );
 
-        // Eşleşmeyi 'matches' koleksiyonuna kaydet
-        // user1Id ve user2Id her zaman alfabetik sıraya göre kaydedilir
         String user1Id = currentUser.uid.compareTo(targetUserId) < 0
             ? currentUser.uid
             : targetUserId;
@@ -115,7 +177,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ? targetUserId
             : currentUser.uid;
 
-        // Aynı eşleşmenin zaten var olup olmadığını kontrol et (duplicate eşleşme olmaması için)
         QuerySnapshot existingMatch = await _firestore
             .collection('matches')
             .where('user1Id', isEqualTo: user1Id)
@@ -123,15 +184,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             .get();
 
         if (existingMatch.docs.isEmpty) {
-          // Eğer daha önce böyle bir eşleşme kaydedilmediyse
           await _firestore.collection('matches').add({
             'user1Id': user1Id,
             'user2Id': user2Id,
             'createdAt': FieldValue.serverTimestamp(),
           });
           debugPrint('DiscoverScreen: Eşleşme Firestore\'a kaydedildi.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Yeni bir eşleşmen var!')),
+          SnackBarService.showSnackBar(
+            context,
+            message: 'Yeni bir eşleşmen var!',
+            type: SnackBarType.success,
           );
         } else {
           debugPrint('DiscoverScreen: Eşleşme zaten mevcut.');
@@ -141,41 +203,74 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       debugPrint(
         'DiscoverScreen: Beğeni/Eşleşme kaydedilirken hata oluştu: $e',
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Beğeni veya eşleşme kaydedilemedi: $e')),
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Beğeni veya eşleşme kaydedilemedi: ${e.toString()}',
+        type: SnackBarType.error,
       );
     }
 
-    _showNextProfile(); // Bir sonraki profili göster
+    _showNextProfile();
   }
 
-  // Geçme (Pass) işlemi
   void _handlePass(String targetUserId) {
     debugPrint('DiscoverScreen: Geçildi: $targetUserId');
-    _showNextProfile(); // Bir sonraki profili göster
+    _seenUserIds.add(targetUserId); // Görülenler listesine ekle
+    _showNextProfile();
   }
 
-  // Bir sonraki profili gösterme (Listeden çıkararak)
   void _showNextProfile() {
     setState(() {
+      debugPrint(
+        'DiscoverScreen: _showNextProfile çağrıldı. Mevcut profil sayısı: ${_userProfiles.length}, isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch',
+      );
       if (_userProfiles.isNotEmpty) {
-        _userProfiles.removeAt(
-          0,
-        ); // Listenin ilk elemanını kaldır (yani gösterilen kartı)
+        _userProfiles.removeAt(0); // Kartı kaldır
+        debugPrint(
+          'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}',
+        );
       }
 
-      if (_userProfiles.isEmpty) {
-        // Tüm profiller bittiyse yeni profiller çek
+      // **BASİTLEŞTİRİLMİŞ PRE-FETCHING/EMPTY STATE MANTIĞI:**
+      // Eğer liste tamamen boşaldıysa ve şu an bir yükleme işlemi yoksa,
+      // Firebase'den daha fazla profil olup olmadığını kontrol et (bir kez daha çekmeyi dene).
+      // Eğer çekilen profil yoksa, _noMoreProfilesToFetch true olacak ve EmptyStateWidget gösterilecek.
+      if (_userProfiles.isEmpty && !_isLoading) {
         debugPrint(
-          'DiscoverScreen: Tüm profiller bitti, yeni profiller çekiliyor...',
+          'DiscoverScreen: Liste tamamen boşaldı. Yeni profil çekme denemesi yapılıyor veya Empty State gösterilecek...',
         );
-        _fetchUserProfiles();
+        if (!_noMoreProfilesToFetch) {
+          // Eğer henüz Firebase'de çekilecek profil kalmadığı kesinleşmediyse
+          _fetchUserProfiles(); // Yeni bir grup profil çekmeyi dene
+        } else {
+          // Liste boş ve Firebase'de gerçekten başka profil kalmadıysa, EmptyStateWidget görünecek.
+          debugPrint(
+            'DiscoverScreen: Liste boşaldı ve Firebase\'de daha fazla profil yok. Empty State UI görünmeli.',
+          );
+        }
+      } else {
+        // Liste hala boş değilse veya yükleme devam ediyorsa, hiçbir şey yapma.
+        debugPrint(
+          'DiscoverScreen: Profil çekme koşulu karşılanmadı. Mevcut _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch',
+        );
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'DiscoverScreen: Build metodu çalıştı. _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch',
+    );
+
+    final double appBarHeight = AppBar().preferredSize.height;
+    final double bottomNavBarHeight = kBottomNavigationBarHeight;
+    final double availableHeight =
+        MediaQuery.of(context).size.height -
+        appBarHeight -
+        bottomNavBarHeight -
+        32;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Keşfet'),
@@ -192,45 +287,91 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.tune), // Filtre ikonu
+            icon: const Icon(Icons.tune),
             onPressed: () {
               debugPrint('DiscoverScreen: Filtre İkonu tıklandı');
-              // Filtre ekranına yönlendirme gelecek
             },
           ),
+          if (!_noMoreProfilesToFetch) // Sadece çekilecek profil olabileceği düşünülüyorsa yenile butonu göster
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => _fetchUserProfiles(isRefresh: true),
+              tooltip: 'Profilleri Yenile',
+            ),
         ],
       ),
-      body: _userProfiles.isEmpty && _isLoading == false
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Keşfedilecek yeni profil bulunamadı.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _fetchUserProfiles,
-                    child: const Text('Profilleri Yenile'),
-                  ),
-                ],
-              ),
-            )
-          : _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              // Sadece tek bir kartı göster, o da listenin ilk elemanı
+      body: Builder(
+        // Yeni Builder widget'ı eklendi
+        builder: (BuildContext innerContext) {
+          // innerContext kullanıldı
+          if (_isLoading && _userProfiles.isEmpty) {
+            // Eğer yükleme devam ediyorsa ve liste boşsa yükleme göster
+            return const Center(child: CircularProgressIndicator());
+          } else if (_userProfiles.isEmpty) {
+            // Yükleme bitti ve hala boşsa EmptyStateWidget göster
+            return EmptyStateWidget(
+              icon: Icons.mood_bad_outlined,
+              title: 'Keşfedilecek Kimse Yok',
+              description:
+                  'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha hızlı bağlantılar kurmak için Canlı Sohbet\'i denemek ister misin?',
+              buttonText: 'Canlı Sohbet\'e Git',
+              onButtonPressed: () {
+                Provider.of<TabNavigationProvider>(
+                  innerContext,
+                  listen: false,
+                ).setIndex(5);
+              },
+            );
+          } else {
+            // Profiller varsa Stack'i göster
+            return Stack(
               children: [
-                if (_userProfiles.isNotEmpty) // Liste boş değilse kartı göster
-                  ProfileCardWidget(
-                    userData: _userProfiles[0].data() as Map<String, dynamic>,
-                    onLike: () =>
-                        _handleLike(_userProfiles[0].id), // .id ile UID al
-                    onPass: () => _handlePass(_userProfiles[0].id),
+                // Arka plandaki kart (biraz daha küçük ve geride)
+                if (_userProfiles.length > 1)
+                  Align(
+                    alignment: Alignment.center,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0,
+                        vertical: 16.0,
+                      ),
+                      child: SizedBox(
+                        width: MediaQuery.of(innerContext).size.width * 0.85,
+                        height: availableHeight * 0.9,
+                        child: ProfileCardWidget(
+                          userData:
+                              _userProfiles[1].data() as Map<String, dynamic>,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Ön plandaki kart (en büyük ve en önde)
+                if (_userProfiles.isNotEmpty)
+                  Align(
+                    alignment: Alignment.center,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      child: SizedBox(
+                        width: MediaQuery.of(innerContext).size.width * 0.9,
+                        height: availableHeight,
+                        child: ProfileCardWidget(
+                          userData:
+                              _userProfiles[0].data() as Map<String, dynamic>,
+                          onLike: () => _handleLike(_userProfiles[0].id),
+                          onPass: () => _handlePass(_userProfiles[0].id),
+                        ),
+                      ),
+                    ),
                   ),
               ],
-            ),
+            );
+          }
+        },
+      ),
     );
   }
 }

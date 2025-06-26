@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:connectify_app/screens/profile/user_profile_screen.dart'; // Profil detayına yönlendirme için
+import 'package:connectify_app/screens/single_chat_screen.dart';
+import 'package:connectify_app/screens/profile/user_profile_screen.dart';
+import 'package:connectify_app/widgets/empty_state_widget.dart';
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
 
 class PeopleScreen extends StatefulWidget {
   const PeopleScreen({super.key});
@@ -13,8 +16,8 @@ class PeopleScreen extends StatefulWidget {
 class _PeopleScreenState extends State<PeopleScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  List<DocumentSnapshot> _userList = []; // Kullanıcı listesi
-  bool _isLoading = false; // Yüklenme durumu için
+  List<DocumentSnapshot> _userList = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -22,7 +25,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
     _fetchUsers();
   }
 
-  // Kullanıcı listesini Firestore'dan çeken fonksiyon
   Future<void> _fetchUsers() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
@@ -35,13 +37,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
     });
 
     try {
-      // Kendi profilimiz hariç tüm kullanıcıları çekelim (şimdilik filtre yok)
       QuerySnapshot querySnapshot = await _firestore
           .collection('users')
-          .where(
-            'uid',
-            isNotEqualTo: currentUser.uid,
-          ) // Kendi profilimizi gösterme
+          .where('uid', isNotEqualTo: currentUser.uid)
           .get();
 
       setState(() {
@@ -50,14 +48,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
       if (_userList.isEmpty) {
         debugPrint('PeopleScreen: Gösterilecek kullanıcı bulunamadı.');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gösterilecek kullanıcı bulunamadı.')),
-        );
       }
     } catch (e) {
       debugPrint("PeopleScreen: Kullanıcı listesi çekilirken hata oluştu: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kullanıcılar yüklenirken hata oluştu: $e')),
+      SnackBarService.showSnackBar(
+        // SnackBarService eklendi
+        context,
+        message: 'Kullanıcılar yüklenirken hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
+        actionLabel: 'Tekrar Dene',
+        onActionPressed: _fetchUsers,
       );
     } finally {
       setState(() {
@@ -66,60 +66,48 @@ class _PeopleScreenState extends State<PeopleScreen> {
     }
   }
 
-  // Kullanıcı profili detayına gitme
   void _viewUserProfileDetail(Map<String, dynamic> userData) {
     debugPrint(
       'PeopleScreen: Kullanıcı detayına gidiliyor: ${userData['name']}',
     );
-    // Burada daha sonra tek bir kullanıcının detaylı profilini gösterecek bir ekran olacak
-    // Şimdilik sadece UserProfileScreen'i mevcut kullanıcı verisi ile açalım (kendisi değil, seçilen kişi)
-    // Bunun için UserProfileScreen'in initialData alması gerekir veya yeni bir ProfileDetailScreen
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${userData['name']} profil detayına gideceksin.'),
-      ),
+    SnackBarService.showSnackBar(
+      // SnackBarService eklendi
+      context,
+      message: '${userData['name']} profil detayına gideceksin.',
+      type: SnackBarType.info,
     );
   }
 
-  // Kullanıcıyı beğenme işlemi
   void _likeUser(String targetUserId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
     debugPrint('PeopleScreen: Beğenildi: $targetUserId');
     try {
-      // 1. Beğeni bilgisini Firestore'daki 'likes' koleksiyonuna kaydet
       await _firestore.collection('likes').add({
-        'likerId': currentUser.uid, // Beğenen kişi
-        'likedId': targetUserId, // Beğenilen kişi
-        'timestamp': FieldValue.serverTimestamp(), // Beğenme zamanı
+        'likerId': currentUser.uid,
+        'likedId': targetUserId,
+        'timestamp': FieldValue.serverTimestamp(),
       });
       debugPrint('PeopleScreen: Beğeni Firestore\'a kaydedildi.');
-      ScaffoldMessenger.of(context).showSnackBar(
-        // SnackBar'ı başarı durumunda göster
-        SnackBar(content: Text('Kullanıcı beğenildi: $targetUserId')),
+      SnackBarService.showSnackBar(
+        // SnackBarService eklendi
+        context,
+        message: 'Kullanıcı beğenildi!',
+        type: SnackBarType.success,
       );
 
-      // 2. Karşılıklı beğeni kontrolü (Eşleşme için)
       QuerySnapshot reciprocalLike = await _firestore
           .collection('likes')
-          .where(
-            'likerId',
-            isEqualTo: targetUserId,
-          ) // Beğenen kişi targetUserId
-          .where(
-            'likedId',
-            isEqualTo: currentUser.uid,
-          ) // Beğenilen kişi currentUser
+          .where('likerId', isEqualTo: targetUserId)
+          .where('likedId', isEqualTo: currentUser.uid)
           .get();
 
       if (reciprocalLike.docs.isNotEmpty) {
-        // Karşılıklı beğeni var, eşleşme oluştu!
         debugPrint(
           'PeopleScreen: Eşleşme oluştu: ${currentUser.uid} ve $targetUserId',
         );
 
-        // Eşleşmeyi 'matches' koleksiyonuna kaydet
         String user1Id = currentUser.uid.compareTo(targetUserId) < 0
             ? currentUser.uid
             : targetUserId;
@@ -127,7 +115,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ? targetUserId
             : currentUser.uid;
 
-        // Aynı eşleşmenin zaten var olup olmadığını kontrol et (duplicate eşleşme olmaması için)
         QuerySnapshot existingMatch = await _firestore
             .collection('matches')
             .where('user1Id', isEqualTo: user1Id)
@@ -135,15 +122,17 @@ class _PeopleScreenState extends State<PeopleScreen> {
             .get();
 
         if (existingMatch.docs.isEmpty) {
-          // Eğer daha önce böyle bir eşleşme kaydedilmediyse
           await _firestore.collection('matches').add({
             'user1Id': user1Id,
             'user2Id': user2Id,
             'createdAt': FieldValue.serverTimestamp(),
           });
           debugPrint('PeopleScreen: Eşleşme Firestore\'a kaydedildi.');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Yeni bir eşleşmen var!')),
+          SnackBarService.showSnackBar(
+            // SnackBarService eklendi
+            context,
+            message: 'Yeni bir eşleşmen var!',
+            type: SnackBarType.success,
           );
         } else {
           debugPrint('PeopleScreen: Eşleşme zaten mevcut.');
@@ -151,19 +140,22 @@ class _PeopleScreenState extends State<PeopleScreen> {
       }
     } catch (e) {
       debugPrint('PeopleScreen: Beğeni/Eşleşme kaydedilirken hata oluştu: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Beğeni veya eşleşme kaydedilemedi: $e')),
+      SnackBarService.showSnackBar(
+        // SnackBarService eklendi
+        context,
+        message: 'Beğeni veya eşleşme kaydedilemedi: ${e.toString()}',
+        type: SnackBarType.error,
       );
     }
   }
 
-  // Kullanıcıya mesaj gönderme işlemi
-  void _messageUser(String targetUserId) {
-    debugPrint('PeopleScreen: Mesaj gönderiliyor: $targetUserId');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Kullanıcıya mesaj gönderiliyor: $targetUserId')),
+  void _messageUser(Map<String, dynamic> userData) {
+    debugPrint('PeopleScreen: Mesaj gönderiliyor: ${userData['name']}');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SingleChatScreen(matchedUser: userData),
+      ),
     );
-    // İleride mesajlaşma ekranına yönlendirme gelecek
   }
 
   @override
@@ -173,10 +165,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
         title: const Text('İnsanlar'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list), // Filtre ikonu
+            icon: const Icon(Icons.filter_list),
             onPressed: () {
               debugPrint('PeopleScreen: Filtre İkonu tıklandı');
-              // Filtreleme ekranına yönlendirme gelecek
             },
           ),
         ],
@@ -184,21 +175,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _userList.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Gösterilecek kullanıcı bulunamadı.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _fetchUsers,
-                    child: const Text('Kullanıcıları Yenile'),
-                  ),
-                ],
-              ),
+          ? EmptyStateWidget(
+              icon: Icons.person_search,
+              title: 'Kimse Bulunamadı',
+              description:
+                  'Görünüşe göre kriterlerine uygun yeni bir kişi yok. Belki de filtrelerini güncellemeyi denemelisin?',
+              buttonText: 'Kullanıcıları Yenile',
+              onButtonPressed: _fetchUsers,
             )
           : ListView.builder(
               padding: const EdgeInsets.all(16.0),
@@ -210,7 +193,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 final int age = userData['age'] ?? 0;
                 final String profileImageUrl =
                     userData['profileImageUrl'] ??
-                    'https://via.placeholder.com/150';
+                    'https://placehold.co/100x100/CCCCCC/000000?text=Profil';
                 final String bio = userData['bio'] ?? '';
                 final List<String> interests = List<String>.from(
                   userData['interests'] ?? [],
@@ -227,7 +210,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Profil Resmi
                         CircleAvatar(
                           radius: 40,
                           backgroundImage: NetworkImage(profileImageUrl),
@@ -238,7 +220,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // İsim ve Yaş
                               Text(
                                 '$name, $age',
                                 style: const TextStyle(
@@ -247,7 +228,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              // Biyografi
                               Text(
                                 bio.isNotEmpty ? bio : 'Biyografi yok.',
                                 maxLines: 2,
@@ -258,7 +238,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              // İlgi Alanları
                               if (interests.isNotEmpty)
                                 Wrap(
                                   spacing: 6.0,
@@ -278,7 +257,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                   }).toList(),
                                 ),
                               const SizedBox(height: 12),
-                              // Aksiyon Butonları
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
@@ -295,8 +273,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                       Icons.message_outlined,
                                       color: Colors.blue,
                                     ),
-                                    onPressed: () =>
-                                        _messageUser(userData['uid']),
+                                    onPressed: () => _messageUser(userData),
                                     tooltip: 'Mesaj Gönder',
                                   ),
                                 ],

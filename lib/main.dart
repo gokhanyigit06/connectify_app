@@ -6,11 +6,20 @@ import 'package:connectify_app/firebase_options.dart';
 import 'package:connectify_app/screens/auth/welcome_screen.dart';
 import 'package:connectify_app/screens/home_screen.dart';
 import 'package:connectify_app/screens/profile/profile_setup_screen.dart';
+import 'package:connectify_app/utils/app_colors.dart';
+import 'package:provider/provider.dart';
+import 'package:connectify_app/providers/tab_navigation_provider.dart';
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => TabNavigationProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -22,20 +31,33 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Connectify',
       theme: ThemeData(
-        primarySwatch: Colors.yellow,
-        scaffoldBackgroundColor: Colors.white,
+        fontFamily: 'Inter',
+        scaffoldBackgroundColor: AppColors.background,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          backgroundColor: AppColors.background,
+          foregroundColor: AppColors.primaryText,
           elevation: 0,
           centerTitle: true,
         ),
         textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Colors.black),
-          bodyMedium: TextStyle(color: Colors.black),
+          bodyLarge: TextStyle(color: AppColors.primaryText),
+          bodyMedium: TextStyle(color: AppColors.primaryText),
+          displayLarge: TextStyle(),
+          displayMedium: TextStyle(),
+          displaySmall: TextStyle(),
+          headlineLarge: TextStyle(),
+          headlineMedium: TextStyle(),
+          headlineSmall: TextStyle(),
+          titleLarge: TextStyle(),
+          titleMedium: TextStyle(),
+          titleSmall: TextStyle(),
+          labelLarge: TextStyle(),
+          labelMedium: TextStyle(),
+          labelSmall: TextStyle(),
+          bodySmall: TextStyle(),
         ),
         buttonTheme: ButtonThemeData(
-          buttonColor: Colors.yellow[700],
+          buttonColor: AppColors.primaryYellow,
           textTheme: ButtonTextTheme.primary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -43,8 +65,8 @@ class MyApp extends StatelessWidget {
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.yellow[700],
-            foregroundColor: Colors.black,
+            backgroundColor: AppColors.primaryYellow,
+            foregroundColor: AppColors.black,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -52,20 +74,29 @@ class MyApp extends StatelessWidget {
             textStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
+              fontFamily: 'Inter',
             ),
           ),
         ),
-        colorScheme: ColorScheme.fromSwatch(
-          primarySwatch: Colors.yellow,
-        ).copyWith(secondary: Colors.yellowAccent),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primaryYellow,
+          primary: AppColors.primaryYellow,
+          secondary: AppColors.accentPink,
+          surface: AppColors.background,
+          onPrimary: AppColors.black,
+          onSecondary: AppColors.white,
+          onSurface: AppColors.primaryText,
+          background: AppColors.background,
+          onBackground: AppColors.primaryText,
+          error: AppColors.red,
+          onError: AppColors.white,
+        ),
       ),
-      home:
-          const AuthWrapper(), // Kullanıcının durumuna göre yönlendirecek widget
+      home: const AuthWrapper(),
     );
   }
 }
 
-// Kullanıcının giriş ve profil durumunu kontrol eden sarmalayıcı (EN SON VE KESİN VERSİYON)
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -74,7 +105,6 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  // Yönlendirme işlemi tamamlanana kadar gösterilecek ekran
   Widget _initialWidget = const Scaffold(
     body: Center(child: CircularProgressIndicator()),
   );
@@ -82,16 +112,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void initState() {
     super.initState();
-    // Uygulama ilk açıldığında auth ve profil durumunu kontrol et
-    // Bu sadece uygulamanın en başında bir kez çalışır.
-    // Auth ekranlarından sonraki yönlendirmeler artık o ekranlar tarafından yönetiliyor.
     _checkAuthStateAndProfileOnAppStart();
   }
 
   Future<void> _checkAuthStateAndProfileOnAppStart() async {
     debugPrint(
       'AuthWrapper: _checkAuthStateAndProfileOnAppStart başlatıldı. (YENİ VERSİYON)',
-    ); // KESİN TEKİL LOG
+    );
     final User? user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
@@ -106,13 +133,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         'AuthWrapper: Uygulama başlangıcı - Kullanıcı giriş yapmış (${user.uid}), profil kontrol ediliyor. (YENİ VERSİYON)',
       );
       try {
-        // Firestore'dan her zaman sunucudan en güncel veriyi çek.
         DocumentSnapshot profileDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
-            .get(
-              const GetOptions(source: Source.server),
-            ); // KESİN SUNUCU KONTROLÜ
+            .get(const GetOptions(source: Source.server));
 
         if (profileDoc.exists) {
           final userData = profileDoc.data() as Map<String, dynamic>?;
@@ -130,6 +154,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
             setState(() {
               _initialWidget = const ProfileSetupScreen();
             });
+            SnackBarService.showSnackBar(
+              // SnackBarService eklendi
+              context,
+              message: 'Profilinizi tamamlamanız gerekiyor!',
+              type: SnackBarType.info,
+            );
           }
         } else {
           debugPrint(
@@ -138,6 +168,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
           setState(() {
             _initialWidget = const ProfileSetupScreen();
           });
+          SnackBarService.showSnackBar(
+            // SnackBarService eklendi
+            context,
+            message:
+                'Hesabınızı kullanmaya başlamak için profilinizi oluşturun!',
+            type: SnackBarType.info,
+          );
         }
       } catch (e) {
         debugPrint(
@@ -146,6 +183,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         setState(() {
           _initialWidget = const ProfileSetupScreen();
         });
+        SnackBarService.showSnackBar(
+          // SnackBarService eklendi
+          context,
+          message: 'Profil yüklenirken bir hata oluştu: ${e.toString()}',
+          type: SnackBarType.error,
+        );
       }
     }
   }
@@ -154,7 +197,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     debugPrint(
       'AuthWrapper: build metodu çalıştı. Gösterilen initialWidget. (YENİ VERSİYON)',
-    ); // KESİN TEKİL LOG
+    );
     return _initialWidget;
   }
 }
