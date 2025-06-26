@@ -8,6 +8,7 @@ import 'package:connectify_app/utils/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
 import 'package:connectify_app/services/snackbar_service.dart';
+import 'package:connectify_app/screens/filter_screen.dart'; // FilterScreen import edildi
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -28,6 +29,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   bool _noMoreProfilesToFetch = false;
 
+  FilterCriteria _currentFilters = FilterCriteria(); // Varsayılan boş filtreler
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +40,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   @override
   bool get wantKeepAlive => true;
 
-  // Kullanıcı profillerini Firestore'dan çeken ana fonksiyon
   Future<void> _fetchUserProfiles({
     bool isInitialLoad = false,
     bool isRefresh = false,
@@ -71,14 +73,37 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     debugPrint(
       'DiscoverScreen: _fetchUserProfiles başlatıldı. isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch',
     );
+    debugPrint(
+      'DiscoverScreen: Mevcut Filtreler - MinAge: ${_currentFilters.minAge}, MaxAge: ${_currentFilters.maxAge}, Gender: ${_currentFilters.gender}, Location: ${_currentFilters.location}',
+    );
 
     try {
       Query query = _firestore
           .collection('users')
           .where('uid', isNotEqualTo: currentUser.uid)
           .orderBy('uid', descending: true)
-          .orderBy('createdAt', descending: true)
-          .limit(10);
+          .orderBy('createdAt', descending: true);
+
+      // --- Filtreleri sorguya uygulama ---
+      if (_currentFilters.minAge != null) {
+        query = query.where(
+          'age',
+          isGreaterThanOrEqualTo: _currentFilters.minAge,
+        );
+      }
+      if (_currentFilters.maxAge != null) {
+        query = query.where('age', isLessThanOrEqualTo: _currentFilters.maxAge);
+      }
+      if (_currentFilters.gender != null &&
+          _currentFilters.gender != 'Belirtmek İstemiyorum') {
+        query = query.where('gender', isEqualTo: _currentFilters.gender);
+      }
+      if (_currentFilters.location != null) {
+        query = query.where('location', isEqualTo: _currentFilters.location);
+      }
+      // --- Filtreleme sonu ---
+
+      query = query.limit(10); // Limit, filtreler eklendikten sonra uygulanmalı
 
       if (_lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
@@ -257,9 +282,31 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     });
   }
 
+  void _openFilterScreen() async {
+    final FilterCriteria? newFilters = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => FilterScreen(initialFilters: _currentFilters),
+      ),
+    );
+
+    if (newFilters != null &&
+        (newFilters.minAge != _currentFilters.minAge ||
+            newFilters.maxAge != _currentFilters.maxAge ||
+            newFilters.gender != _currentFilters.gender ||
+            newFilters.location != _currentFilters.location)) {
+      setState(() {
+        _currentFilters = newFilters;
+        debugPrint('DiscoverScreen: Yeni filtreler uygulandı.');
+      });
+      _fetchUserProfiles(isRefresh: true);
+    } else {
+      debugPrint('DiscoverScreen: Filtreler değişmedi veya iptal edildi.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    super.build(context); // AutomaticKeepAliveClientMixin için gerekli
+    super.build(context);
 
     debugPrint(
       'DiscoverScreen: Build metodu çalıştı. _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch',
@@ -290,9 +337,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.tune), // Filtre ikonu
-            onPressed: () {
-              debugPrint('DiscoverScreen: Filtre İkonu tıklandı');
-            },
+            onPressed: _openFilterScreen, // Filtre ekranını aç
+            tooltip: 'Filtrele',
           ),
           // Yenile butonu kaldırıldı.
           // if (!_noMoreProfilesToFetch)
