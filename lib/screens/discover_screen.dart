@@ -25,13 +25,13 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   bool _isLoading = false;
 
   DocumentSnapshot? _lastDocument;
-  // O anki oturumda görülen kullanıcıların ID'lerini tutacak liste (Firebase sorgusu için değil, UI'da tekrarları önlemek için)
   final List<String> _seenUserIds = [];
 
-  // Firebase'den çekilecek başka profil kalmadığını belirtir (sorgu boş döndüğünde true olur)
   bool _noMoreProfilesToFetch = false;
 
-  FilterCriteria _currentFilters = FilterCriteria(); // Varsayılan boş filtreler
+  FilterCriteria _currentFilters = FilterCriteria();
+
+  int _swipeCount = 0; // Yeni: Kaydırma sayacı
 
   @override
   void initState() {
@@ -42,7 +42,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   @override
   bool get wantKeepAlive => true;
 
-  // Kullanıcı profillerini Firestore'dan çeken ana fonksiyon
   Future<void> _fetchUserProfiles({
     bool isInitialLoad = false,
     bool isRefresh = false,
@@ -55,7 +54,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
     if (isRefresh) {
       _userProfiles.clear();
-      // _seenUserIds.clear(); // BU SATIR KALDIRILDI: isRefresh'te seenUserIds'i temizleme!
       _lastDocument = null;
       _noMoreProfilesToFetch = false;
       debugPrint(
@@ -87,7 +85,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           .orderBy('uid', descending: true)
           .orderBy('createdAt', descending: true);
 
-      // --- Filtreleri sorguya uygulama ---
       if (_currentFilters.minAge != null) {
         query = query.where(
           'age',
@@ -104,7 +101,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       if (_currentFilters.location != null) {
         query = query.where('location', isEqualTo: _currentFilters.location);
       }
-      // --- Filtreleme sonu ---
 
       query = query.limit(10);
 
@@ -264,6 +260,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         debugPrint(
           'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}',
         );
+        _swipeCount++; // Her kaydırmada sayacı artır
+        debugPrint('DiscoverScreen: Kaydırma Sayısı: $_swipeCount');
+
+        if (_swipeCount % 6 == 0 && _swipeCount != 0) {
+          // Her 6 kaydırmada bir reklam göster (şimdilik AlertDialog)
+          _showAdPlaceholder();
+          // _swipeCount = 0; // Reklam gösterildikten sonra sayacı sıfırlayabiliriz veya devam ettirebiliriz.
+          // Reklamın her 6 kaydırmada bir görünmesini istiyorsak sıfırlamayız.
+          // AdMob entegrasyonunda reklamın yüklenip gösterilmesi ayrı bir süreçtir.
+        }
       }
 
       if (_userProfiles.isEmpty && !_isLoading) {
@@ -283,6 +289,53 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         );
       }
     });
+  }
+
+  // Reklam yer tutucu (placeholder) fonksiyonu
+  void _showAdPlaceholder() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            "Reklam Alanı",
+            style: TextStyle(color: AppColors.primaryText), // Renk paletinden
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.network(
+                "https://placehold.co/300x250/FFC300/000000?text=AD", // Reklam görseli için yer tutucu
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.image_not_supported,
+                  color: AppColors.red,
+                ), // Renk paletinden
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Burada reklamınız gösterilecektir.",
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                ), // Renk paletinden
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text(
+                "Kapat",
+                style: TextStyle(
+                  color: AppColors.accentPink,
+                ), // Renk paletinden
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _openFilterScreen() async {
@@ -343,13 +396,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             onPressed: _openFilterScreen, // Filtre ekranını aç
             tooltip: 'Filtrele',
           ),
-          // Yenile butonu kaldırıldı.
-          // if (!_noMoreProfilesToFetch)
-          //   IconButton(
-          //     icon: const Icon(Icons.refresh),
-          //     onPressed: () => _fetchUserProfiles(isRefresh: true),
-          //     tooltip: 'Profilleri Yenile',
-          //   ),
         ],
       ),
       body: Builder(

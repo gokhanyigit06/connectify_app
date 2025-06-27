@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectify_app/screens/single_chat_screen.dart';
 import 'package:connectify_app/widgets/empty_state_widget.dart';
-import 'package:connectify_app/utils/app_colors.dart';
+import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
 import 'package:connectify_app/services/snackbar_service.dart';
@@ -91,7 +91,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           userData['uid'] =
               matchedUserProfile.id; // UID'yi userData'ya ekleyelim
 
-          // **ÖNEMLİ DÜZELTME:** Sohbet belgesinin varlığını kontrol et
+          // Sohbet belgesinin varlığını kontrol et
           String currentChatId = _getChatId(currentUser.uid, matchedUid);
           DocumentSnapshot chatDoc = await _firestore
               .collection('chats')
@@ -116,9 +116,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               debugPrint(
                 'ChatsScreen: ${userData['name']} (${userData['uid']}) ile mesajlaşma başlamış ancak mesaj yok.',
               );
-              tempUnMessagedMatches.add(
-                userData,
-              ); // Varsa ama mesaj yoksa da unmessaged kabul edilebilir
+              tempUnMessagedMatches.add(userData);
             }
           } else {
             // Sohbet belgesi yoksa (hiç mesaj gönderilmemiş demektir)
@@ -205,7 +203,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   // Sohbet odası ID'sini oluşturan yardımcı fonksiyon
   String _getChatId(String user1Id, String user2Id) {
-    // UID'leri alfabetik sıraya göre birleştirerek tutarlı bir sohbet ID'si oluşturur
     if (user1Id.compareTo(user2Id) < 0) {
       return '${user1Id}_$user2Id';
     } else {
@@ -232,6 +229,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Enerjik gradyan çerçeve için bir LinearGradient tanımla
+    final LinearGradient storyBorderGradient = LinearGradient(
+      colors: [AppColors.primaryYellow, AppColors.accentPink],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sohbetler'),
@@ -259,7 +263,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 Provider.of<TabNavigationProvider>(
                   context,
                   listen: false,
-                ).setIndex(1); // Keşfet sekmesi index 1
+                ).setIndex(1);
               },
             )
           : Column(
@@ -288,62 +292,85 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                 ),
                                 child: Column(
                                   children: [
-                                    Stack(
-                                      alignment: Alignment.bottomRight,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 30,
-                                          backgroundImage:
-                                              _profileImageUrlForLikedYouQueue !=
-                                                  null
-                                              ? NetworkImage(
-                                                  _profileImageUrlForLikedYouQueue!,
-                                                )
-                                              : null,
-                                          backgroundColor: AppColors.grey
-                                              .withOpacity(0.2),
-                                          child:
-                                              _profileImageUrlForLikedYouQueue ==
-                                                  null
-                                              ? Icon(
-                                                  Icons.person_outline,
-                                                  size: 30,
-                                                  color: AppColors.primaryText,
-                                                )
-                                              : null,
+                                    // Gradyan çerçeve için Container ve ShaderMask kullanıyoruz
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient:
+                                            storyBorderGradient, // Gradyan çerçeve
+                                        border: Border.all(
+                                          color: Colors
+                                              .transparent, // Transparan yap, gradyanı kullanacağız
+                                          width: 2.0,
                                         ),
-                                        Positioned(
-                                          bottom: 0,
-                                          right: 0,
-                                          child: Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.accentPink,
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: AppColors.white,
-                                                width: 2,
+                                      ),
+                                      child: Padding(
+                                        // Çerçevenin kalınlığı için padding
+                                        padding: const EdgeInsets.all(
+                                          2.0,
+                                        ), // Çerçevenin kalınlığı
+                                        child: Stack(
+                                          alignment: Alignment.bottomRight,
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 30,
+                                              backgroundImage:
+                                                  _profileImageUrlForLikedYouQueue !=
+                                                      null
+                                                  ? NetworkImage(
+                                                      _profileImageUrlForLikedYouQueue!,
+                                                    )
+                                                  : null,
+                                              backgroundColor: AppColors.grey
+                                                  .withOpacity(0.2),
+                                              child:
+                                                  _profileImageUrlForLikedYouQueue ==
+                                                      null
+                                                  ? Icon(
+                                                      Icons.person_outline,
+                                                      size: 30,
+                                                      color:
+                                                          AppColors.primaryText,
+                                                    )
+                                                  : null,
+                                            ),
+                                            Positioned(
+                                              bottom: 0,
+                                              right: 0,
+                                              child: Container(
+                                                padding: const EdgeInsets.all(
+                                                  4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.accentPink,
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors.white,
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 20,
+                                                      minHeight: 20,
+                                                    ),
+                                                child: Text(
+                                                  _likesCount > 99
+                                                      ? '99+'
+                                                      : _likesCount.toString(),
+                                                  style: const TextStyle(
+                                                    color: AppColors.white,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
                                               ),
                                             ),
-                                            constraints: const BoxConstraints(
-                                              minWidth: 20,
-                                              minHeight: 20,
-                                            ),
-                                            child: Text(
-                                              _likesCount > 99
-                                                  ? '99+'
-                                                  : _likesCount.toString(),
-                                              style: const TextStyle(
-                                                color: AppColors.white,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
@@ -376,21 +403,31 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                 ),
                                 child: Column(
                                   children: [
+                                    // Gradyan çerçeve için Container ve Padding kullanıyoruz
                                     Container(
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
+                                        gradient:
+                                            storyBorderGradient, // Gradyan çerçeve
                                         border: Border.all(
-                                          color: AppColors.primaryYellow,
+                                          color: Colors
+                                              .transparent, // Transparan yap, gradyanı kullanacağız
                                           width: 2.0,
                                         ),
                                       ),
-                                      child: CircleAvatar(
-                                        radius: 30,
-                                        backgroundImage: NetworkImage(
-                                          profileImageUrl,
+                                      child: Padding(
+                                        // Çerçevenin kalınlığı için padding
+                                        padding: const EdgeInsets.all(
+                                          2.0,
+                                        ), // Çerçevenin kalınlığı
+                                        child: CircleAvatar(
+                                          radius: 30,
+                                          backgroundImage: NetworkImage(
+                                            profileImageUrl,
+                                          ),
+                                          backgroundColor: AppColors.grey
+                                              .withOpacity(0.2),
                                         ),
-                                        backgroundColor: AppColors.grey
-                                            .withOpacity(0.2),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -439,52 +476,108 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
                 // Mevcut Sohbet Listesi (Mesajlaşılmış Eşleşmeler)
                 Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    itemCount: _messagedMatches.length,
-                    itemBuilder: (context, index) {
-                      final messagedUser = _messagedMatches[index];
-                      final String name = messagedUser['name'] ?? 'Bilinmiyor';
-                      final String profileImageUrl =
-                          messagedUser['profileImageUrl'] ??
-                          'https://placehold.co/150x150/CCCCCC/000000?text=Profil';
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12.0),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  child:
+                      _messagedMatches
+                          .isEmpty // Eğer hiç aktif sohbet yoksa
+                      ? Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.message_outlined,
+                                size: 60,
+                                color: AppColors.secondaryText,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Henüz aktif sohbetin yok.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  color: AppColors.primaryText,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Yukarıdaki yeni eşleşmelerinle konuşmaya başla!',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppColors.secondaryText,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              ElevatedButton(
+                                onPressed: () {
+                                  SnackBarService.showSnackBar(
+                                    context,
+                                    message: 'Yeni eşleşmeler yukarıda!',
+                                    type: SnackBarType.info,
+                                  );
+                                },
+                                child: const Text('Yeni Eşleşmelere Bak'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryYellow,
+                                  foregroundColor: AppColors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          itemCount: _messagedMatches.length,
+                          itemBuilder: (context, index) {
+                            final messagedUser = _messagedMatches[index];
+                            final String name =
+                                messagedUser['name'] ?? 'Bilinmiyor';
+                            final String profileImageUrl =
+                                messagedUser['profileImageUrl'] ??
+                                'https://placehold.co/150x150/CCCCCC/000000?text=Profil';
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12.0),
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  radius: 30,
+                                  backgroundImage: NetworkImage(
+                                    profileImageUrl,
+                                  ),
+                                  backgroundColor: AppColors.grey.withOpacity(
+                                    0.2,
+                                  ),
+                                ),
+                                title: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Son mesaj buraya gelecek...',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: AppColors.secondaryText,
+                                  ),
+                                ),
+                                trailing: Text(
+                                  'Şimdi',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.secondaryText,
+                                  ),
+                                ),
+                                onTap: () => _onChatTapped(messagedUser),
+                              ),
+                            );
+                          },
                         ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            radius: 30,
-                            backgroundImage: NetworkImage(profileImageUrl),
-                            backgroundColor: AppColors.grey.withOpacity(0.2),
-                          ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'Son mesaj buraya gelecek...',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: AppColors.secondaryText),
-                          ),
-                          trailing: Text(
-                            'Şimdi',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.secondaryText,
-                            ),
-                          ),
-                          onTap: () => _onChatTapped(messagedUser),
-                        ),
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
