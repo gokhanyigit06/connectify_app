@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
-import 'dart:io'; // File tipini kullanabilmek için
+import 'dart:io';
 
 class OnboardingDataProvider extends ChangeNotifier {
   String _name = '';
   DateTime? _dateOfBirth;
   String? _gender;
   String _location = '';
-  String _bio = ''; // Yeni: Biyografi alanı
+  String _bio = '';
+  int? _height;
+  String? _relationshipGoal; // Yeni: İlişki hedefi alanı
   List<String> _interests = [];
   File? _profileImageFile;
-  List<File> _otherImageFiles =
-      []; // Geçici olarak yeni eklenen resim dosyaları
+  List<File> _otherImageFiles = [];
 
   // Getter'lar
   String get name => _name;
   DateTime? get dateOfBirth => _dateOfBirth;
   String? get gender => _gender;
   String get location => _location;
-  String get bio => _bio; // Yeni: Biyografi getter
+  String get bio => _bio;
+  int? get height => _height;
+  String? get relationshipGoal =>
+      _relationshipGoal; // Yeni: İlişki hedefi getter
   List<String> get interests => List.unmodifiable(_interests);
   File? get profileImageFile => _profileImageFile;
   List<File> get otherImageFiles => List.unmodifiable(_otherImageFiles);
@@ -44,8 +48,18 @@ class OnboardingDataProvider extends ChangeNotifier {
   }
 
   void setBio(String bio) {
-    // Yeni: Biyografi setter
     _bio = bio;
+    notifyListeners();
+  }
+
+  void setHeight(int height) {
+    _height = height;
+    notifyListeners();
+  }
+
+  void setRelationshipGoal(String relationshipGoal) {
+    // Yeni: İlişki hedefi setter
+    _relationshipGoal = relationshipGoal;
     notifyListeners();
   }
 
@@ -68,8 +82,6 @@ class OnboardingDataProvider extends ChangeNotifier {
     if (_otherImageFiles.length < 5) {
       _otherImageFiles.add(file);
       notifyListeners();
-    } else {
-      // SnackBar mesajı burada gösterilmez, PhotoUploadScreen'de gösterilir.
     }
   }
 
@@ -78,13 +90,15 @@ class OnboardingDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Tüm verileri sıfırlama (örneğin kullanıcı çıkış yaptığında)
+  // Tüm verileri sıfırlama
   void reset() {
     _name = '';
     _dateOfBirth = null;
     _gender = null;
     _location = '';
-    _bio = ''; // Sıfırlama
+    _bio = '';
+    _height = null;
+    _relationshipGoal = null; // Sıfırlama
     _interests = [];
     _profileImageFile = null;
     _otherImageFiles = [];

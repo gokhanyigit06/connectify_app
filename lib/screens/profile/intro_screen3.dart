@@ -3,7 +3,7 @@ import 'package:connectify_app/utils/app_colors.dart';
 import 'package:connectify_app/services/snackbar_service.dart';
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/onboarding_data_provider.dart';
-import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Yeni: ProfileSetupScreen'e yönlendirme
+import 'package:connectify_app/screens/profile/intro_screen4.dart'; // Yeni: IntroScreen4'e yönlendirme
 
 class IntroScreen3 extends StatefulWidget {
   const IntroScreen3({super.key});
@@ -19,7 +19,6 @@ class _IntroScreen3State extends State<IntroScreen3> {
   @override
   void initState() {
     super.initState();
-    // OnboardingDataProvider'dan mevcut verileri yükle
     final onboardingProvider =
         Provider.of<OnboardingDataProvider>(context, listen: false);
     _locationController.text = onboardingProvider.location;
@@ -54,7 +53,6 @@ class _IntroScreen3State extends State<IntroScreen3> {
       return;
     }
 
-    // Verileri OnboardingDataProvider'a kaydet
     final onboardingProvider =
         Provider.of<OnboardingDataProvider>(context, listen: false);
     onboardingProvider.setLocation(location);
@@ -65,11 +63,11 @@ class _IntroScreen3State extends State<IntroScreen3> {
     SnackBarService.showSnackBar(context,
         message: 'Devam ediliyor...', type: SnackBarType.info);
 
-    // Bir sonraki ekrana (ProfileSetupScreen) geçiş
+    // Bir sonraki ekrana (IntroScreen4) geçiş
     Navigator.of(context).push(
       MaterialPageRoute(
           builder: (context) =>
-              const ProfileSetupScreen()), // ProfileSetupScreen'e yönlendir
+              const IntroScreen4()), // IntroScreen4'e yönlendir
     );
   }
 
