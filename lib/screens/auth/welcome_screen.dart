@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:connectify_app/screens/auth/email_auth_screen.dart'; // E-posta/Şifre ekranı
-import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Profil oluşturma ekranı
+import 'package:connectify_app/screens/auth/phone_auth_screen.dart'; // Telefon numarası doğrulama ekranı
+// import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Artık doğrudan bu ekrana yönlendirmiyoruz
 import 'package:connectify_app/screens/home_screen.dart'; // Anasayfa
 import 'package:google_sign_in/google_sign_in.dart'; // Google Sign-In için
 import 'package:firebase_auth/firebase_auth.dart'; // Firebase kimlik doğrulama için
@@ -31,8 +32,8 @@ class WelcomeScreen extends StatelessWidget {
         idToken: googleAuth.idToken,
       );
 
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithCredential(credential);
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (userCredential.user != null) {
         SnackBarService.showSnackBar(
@@ -40,8 +41,14 @@ class WelcomeScreen extends StatelessWidget {
           message: 'Google ile başarıyla giriş yapıldı!',
           type: SnackBarType.success,
         );
-        // Kullanıcıyı yönlendir
-        _handleAuthNavigation(context, userCredential.user!);
+        // AuthWrapper, kimlik doğrulama durumundaki değişikliği algılayacak
+        // ve kullanıcının profilinin tamamlanıp tamamlanmadığına göre
+        // WelcomeScreen, ProfileSetupScreen veya HomeScreen'e yönlendirecektir.
+        // Bu ekrandan doğrudan Anasayfa'ya dönerek AuthWrapper'ın devreye girmesini sağlıyoruz.
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
+        );
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Google Sign-In Hatası: ${e.code} - ${e.message}');
@@ -64,17 +71,6 @@ class WelcomeScreen extends StatelessWidget {
         type: SnackBarType.error,
       );
     }
-  }
-
-  // Kullanıcının profil durumuna göre yönlendirme
-  void _handleAuthNavigation(BuildContext context, User user) {
-    // Profilin tamamlanıp tamamlanmadığını burada veya AuthWrapper'da kontrol et.
-    // AuthWrapper zaten bu kontrolü yapıyor, bu yüzden doğrudan ana ekrana yönlendir.
-    // Eğer profil eksikse AuthWrapper ProfileSetupScreen'e yönlendirecektir.
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-      (Route<dynamic> route) => false,
-    );
   }
 
   @override
@@ -118,10 +114,8 @@ class WelcomeScreen extends StatelessWidget {
                   // Google ile devam et butonu
                   ElevatedButton.icon(
                     onPressed: () => _signInWithGoogle(context),
-                    icon: Image.asset(
-                      'assets/images/google_logo.png',
-                      height: 24,
-                    ), // Google logosu
+                    icon: Image.asset('assets/images/google_logo.png',
+                        height: 24), // Google logosu
                     label: const Text('Google ile Devam Et'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.white,
@@ -131,9 +125,30 @@ class WelcomeScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Telefon Numarası ile devam et butonu
+                  ElevatedButton.icon(
+                    // Yeni buton
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (context) => const PhoneAuthScreen()),
+                      );
+                    },
+                    icon: Icon(Icons.phone, color: AppColors.white),
+                    label: const Text('Telefon Numarası ile Devam Et'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentTeal, // Renk paletinden
+                      foregroundColor: AppColors.white,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
+                      textStyle: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -142,8 +157,7 @@ class WelcomeScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (context) => const EmailAuthScreen(),
-                        ),
+                            builder: (context) => const EmailAuthScreen()),
                       );
                     },
                     icon: Icon(Icons.email, color: AppColors.white),
@@ -156,9 +170,7 @@ class WelcomeScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       textStyle: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(height: 40),

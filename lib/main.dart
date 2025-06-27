@@ -6,16 +6,22 @@ import 'package:connectify_app/firebase_options.dart';
 import 'package:connectify_app/screens/auth/welcome_screen.dart';
 import 'package:connectify_app/screens/home_screen.dart';
 import 'package:connectify_app/screens/profile/profile_setup_screen.dart';
+import 'package:connectify_app/screens/profile/intro_screen1.dart';
 import 'package:connectify_app/utils/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
+import 'package:connectify_app/providers/onboarding_data_provider.dart';
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => TabNavigationProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => TabNavigationProvider()),
+        ChangeNotifierProvider(create: (context) => OnboardingDataProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -97,7 +103,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// Kullanıcının giriş ve profil durumunu kontrol eden sarmalayıcı (EN SON VE KESİN VERSİYON)
+// Kullanıcının giriş ve profil durumunu kontrol eden sarmalayıcı
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -106,27 +112,16 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  // Yönlendirme işlemi tamamlanana kadar gösterilecek ekran
-  Widget _initialWidget = const Scaffold(
-    body: Center(child: CircularProgressIndicator()),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    // Uygulama ilk açıldığında auth ve profil durumunu kontrol et
-    // Auth ekranlarından sonraki yönlendirmeler artık o ekranlar tarafından yönetiliyor.
-    // _checkAuthStateAndProfileOnAppStart(); // Bu metodu StreamBuilder ile değiştiriyoruz
-  }
-
   @override
   Widget build(BuildContext context) {
-    // FirebaseAuth'ın authStateChanges stream'ini dinle
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
+        debugPrint(
+            'AuthWrapper: authStateChanges - ConnectionState: ${snapshot.connectionState}, HasData: ${snapshot.hasData}, HasError: ${snapshot.hasError}');
+
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // Bağlantı beklenirken yükleme göster
+          debugPrint('AuthWrapper: Kimlik doğrulama durumu bekleniyor...');
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
         }
@@ -134,12 +129,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final User? user = snapshot.data;
 
         if (user == null) {
-          // Kullanıcı giriş yapmamışsa karşılama ekranına yönlendir
           debugPrint(
               'AuthWrapper: Kullanıcı giriş yapmamış, WelcomeScreen gösteriliyor.');
           return const WelcomeScreen();
         } else {
-          // Kullanıcı giriş yapmışsa profilini kontrol et
           debugPrint(
               'AuthWrapper: Kullanıcı giriş yapmış (${user.uid}), profil kontrol ediliyor.');
           return FutureBuilder<DocumentSnapshot>(
@@ -148,17 +141,28 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 .doc(user.uid)
                 .get(),
             builder: (context, profileSnapshot) {
+              debugPrint(
+                  'AuthWrapper: Profil FutureBuilder - ConnectionState: ${profileSnapshot.connectionState}, HasData: ${profileSnapshot.hasData}, HasError: ${profileSnapshot.hasError}');
+
               if (profileSnapshot.connectionState == ConnectionState.waiting) {
-                // Profil verisi beklenirken yükleme göster
+                debugPrint('AuthWrapper: Profil verisi bekleniyor...');
                 return const Scaffold(
                     body: Center(child: CircularProgressIndicator()));
               }
 
               if (profileSnapshot.hasError) {
                 debugPrint(
-                    'AuthWrapper: Profil kontrol edilirken hata oluştu: ${profileSnapshot.error}. ProfileSetupScreen\'e yönlendiriliyor.');
-                // Hata durumunda profil kurulum ekranına yönlendir
-                return const ProfileSetupScreen();
+                    'AuthWrapper: Profil kontrol edilirken hata oluştu: ${profileSnapshot.error}. IntroScreen1\'e yönlendiriliyor.');
+                if (mounted) {
+                  // mounted kontrolü eklendi
+                  SnackBarService.showSnackBar(
+                    context,
+                    message:
+                        'Profil yüklenirken bir hata oluştu: ${profileSnapshot.error.toString()}',
+                    type: SnackBarType.error,
+                  );
+                }
+                return const IntroScreen1();
               }
 
               if (profileSnapshot.hasData && profileSnapshot.data!.exists) {
@@ -168,17 +172,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     userData['isProfileCompleted'] == true) {
                   debugPrint(
                       'AuthWrapper: Profil tamamlandı, HomeScreen gösteriliyor.');
-                  return const HomeScreen(); // Profil tamamlandıysa ana ekrana
+                  return const HomeScreen();
                 } else {
                   debugPrint(
-                      'AuthWrapper: Profil mevcut ama tamamlanmamış, ProfileSetupScreen gösteriliyor.');
-                  return const ProfileSetupScreen(); // Profil tamamlanmadıysa profil kurulum ekranına
+                      'AuthWrapper: Profil mevcut ama tamamlanmamış, IntroScreen1 gösteriliyor.');
+                  return const IntroScreen1();
                 }
               } else {
-                // Profil belgesi yoksa profil kurulum ekranına yönlendir
                 debugPrint(
-                    'AuthWrapper: Profil belgesi yok, ProfileSetupScreen gösteriliyor.');
-                return const ProfileSetupScreen();
+                    'AuthWrapper: Profil belgesi yok, IntroScreen1 gösteriliyor.');
+                return const IntroScreen1();
               }
             },
           );

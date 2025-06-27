@@ -2,7 +2,8 @@
     <application
         android:label="connectify_app"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true"> <!-- Bu satır eklendi: Geri tuşu uyarisini gidermek icin -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

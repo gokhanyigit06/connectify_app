@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:connectify_app/screens/home_screen.dart'; // Anasayfa - Artık doğrudan yönlendirmiyoruz
-import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Profil oluşturma - AuthWrapper yönetecek
-import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService
-import 'package:connectify_app/utils/app_colors.dart'; // Renk paleti
+import 'package:connectify_app/screens/home_screen.dart';
+import 'package:connectify_app/screens/profile/profile_setup_screen.dart';
+import 'package:connectify_app/screens/profile/intro_screen1.dart'; // IntroScreen1'e yönlendirme için
+import 'package:connectify_app/services/snackbar_service.dart';
+import 'package:connectify_app/utils/app_colors.dart';
 
 class EmailAuthScreen extends StatefulWidget {
   const EmailAuthScreen({super.key});
@@ -44,6 +45,13 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
           message: 'Başarıyla giriş yapıldı!',
           type: SnackBarType.success,
         );
+        // Giriş başarılı olduğunda AuthWrapper yönetecek (HomeScreen'e gidecek)
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
       } else {
         // Kayıt ol
         await _auth.createUserWithEmailAndPassword(
@@ -55,16 +63,16 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
           message: 'Hesabınız başarıyla oluşturuldu! Profilinizi tamamlayın.',
           type: SnackBarType.success,
         );
+        // KAYIT BAŞARILI OLDUĞUNDA DİREKT PROFİL OLUŞTURMA AKIŞINA YÖNLENDİR
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+                builder: (context) =>
+                    const IntroScreen1()), // Doğrudan IntroScreen1'e yönlendir
+            (Route<dynamic> route) => false, // Tüm önceki rotaları temizle
+          );
+        }
       }
-
-      // BAŞARILI KİMLİK DOĞRULAMA SONRASI DOĞRUDAN YÖNLENDİRMEYİ KALDIRDIK.
-      // AuthWrapper, kimlik doğrulama durumundaki değişikliği algılayacak
-      // ve kullanıcının profilinin tamamlanıp tamamlanmadığına göre
-      // WelcomeScreen, ProfileSetupScreen veya HomeScreen'e yönlendirecektir.
-      // Navigator.of(context).pushAndRemoveUntil(
-      //   MaterialPageRoute(builder: (context) => const HomeScreen()),
-      //   (Route<dynamic> route) => false,
-      // );
     } on FirebaseAuthException catch (e) {
       debugPrint('Kimlik Doğrulama Hatası: ${e.code} - ${e.message}');
       String errorMessage = 'Bir hata oluştu.';
@@ -88,13 +96,17 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
         type: SnackBarType.error,
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
-      // İşlem tamamlandıktan sonra bir önceki ekrana dön (WelcomeScreen)
-      // AuthWrapper'ın yönlendirmeyi devralması için bu gerekli.
-      if (mounted) {
-        Navigator.of(context).pop();
+      if (mounted && _isLogin) {
+        // Sadece giriş modunda hata sonrası geri dön
+        setState(() {
+          _isLoading = false;
+        });
+        // Navigator.of(context).pop(); // Giriş modunda pop yap (WelcomeScreen'e dön)
+      } else if (mounted) {
+        // Kayıt modunda ise işlem bitince isLoading'i kapat sadece
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

@@ -9,7 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
 import 'package:connectify_app/services/snackbar_service.dart';
 import 'package:connectify_app/screens/filter_screen.dart';
-import 'package:connectify_app/screens/match_found_screen.dart'; // Yeni: MatchFoundScreen import edildi
+import 'package:connectify_app/screens/match_found_screen.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -34,13 +34,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   int _likesRemainingToday = 0;
 
   FilterCriteria _currentFilters = FilterCriteria();
-  Map<String, dynamic>?
-  _currentUserProfileData; // Yeni: Mevcut kullanıcının profil verisi
+  Map<String, dynamic>? _currentUserProfileData;
+
+  // Geri Al/Geri Sar özelliği için yeni değişkenler
+  String? _lastSwipedUserId; // En son kaydırılan kullanıcının UID'si
+  String? _lastSwipedAction; // 'like' veya 'pass'
 
   @override
   void initState() {
     super.initState();
-    _fetchCurrentUserProfile(); // Mevcut kullanıcının profilini çek
+    _fetchCurrentUserProfile();
     _checkUserPremiumStatus();
     _fetchUserProfiles(isInitialLoad: true);
   }
@@ -48,27 +51,22 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   @override
   bool get wantKeepAlive => true;
 
-  // Mevcut kullanıcının profilini çeken fonksiyon
   Future<void> _fetchCurrentUserProfile() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
     try {
-      DocumentSnapshot userDoc = await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         setState(() {
           _currentUserProfileData = userDoc.data() as Map<String, dynamic>;
         });
         debugPrint(
-          'DiscoverScreen: Mevcut kullanıcı profili çekildi: ${_currentUserProfileData?['name']}',
-        );
+            'DiscoverScreen: Mevcut kullanıcı profili çekildi: ${_currentUserProfileData?['name']}');
       }
     } catch (e) {
       debugPrint(
-        'DiscoverScreen: Mevcut kullanıcı profili çekilirken hata: $e',
-      );
+          'DiscoverScreen: Mevcut kullanıcı profili çekilirken hata: $e');
       SnackBarService.showSnackBar(
         context,
         message: 'Kendi profiliniz yüklenirken hata oluştu: ${e.toString()}',
@@ -81,26 +79,22 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
     try {
-      DocumentSnapshot userDoc = await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         setState(() {
           _isPremiumUser =
               (userDoc.data() as Map<String, dynamic>)['isPremium'] ?? false;
           _likesRemainingToday =
               (userDoc.data() as Map<String, dynamic>)['likesRemainingToday'] ??
-              0;
+                  0;
         });
         debugPrint(
-          'DiscoverScreen: Kullanıcı premium durumu: $_isPremiumUser, Kalan Beğeni: $_likesRemainingToday',
-        );
+            'DiscoverScreen: Kullanıcı premium durumu: $_isPremiumUser, Kalan Beğeni: $_likesRemainingToday');
       }
     } catch (e) {
       debugPrint(
-        'DiscoverScreen: Premium durumu veya kalan beğeni çekilirken hata: $e',
-      );
+          'DiscoverScreen: Premium durumu veya kalan beğeni çekilirken hata: $e');
       SnackBarService.showSnackBar(
         context,
         message:
@@ -110,10 +104,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     }
   }
 
-  Future<void> _fetchUserProfiles({
-    bool isInitialLoad = false,
-    bool isRefresh = false,
-  }) async {
+  Future<void> _fetchUserProfiles(
+      {bool isInitialLoad = false, bool isRefresh = false}) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       debugPrint('DiscoverScreen: Kullanıcı giriş yapmamış. Profil çekilmedi.');
@@ -122,17 +114,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
     if (isRefresh) {
       _userProfiles.clear();
+      // _seenUserIds.clear(); // isRefresh'te seenUserIds'i temizlemiyoruz, çünkü geri sarma yapabiliriz.
       _lastDocument = null;
       _noMoreProfilesToFetch = false;
       debugPrint(
-        'DiscoverScreen: Yenileme işlemi başlatıldı. Her şey sıfırlandı.',
-      );
+          'DiscoverScreen: Yenileme işlemi başlatıldı. Her şey sıfırlandı.');
     }
 
     if (_isLoading && !isRefresh) {
       debugPrint(
-        'DiscoverScreen: Zaten profiller yükleniyor veya listeye yeni eklendi. Tekrar çekim yapılmadı.',
-      );
+          'DiscoverScreen: Zaten profiller yükleniyor veya listeye yeni eklendi. Tekrar çekim yapılmadı.');
       return;
     }
 
@@ -140,11 +131,9 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       _isLoading = true;
     });
     debugPrint(
-      'DiscoverScreen: _fetchUserProfiles başlatıldı. isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch',
-    );
+        'DiscoverScreen: _fetchUserProfiles başlatıldı. isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch');
     debugPrint(
-      'DiscoverScreen: Mevcut Filtreler - MinAge: ${_currentFilters.minAge}, MaxAge: ${_currentFilters.maxAge}, Gender: ${_currentFilters.gender}, Location: ${_currentFilters.location}',
-    );
+        'DiscoverScreen: Mevcut Filtreler - MinAge: ${_currentFilters.minAge}, MaxAge: ${_currentFilters.maxAge}, Gender: ${_currentFilters.gender}, Location: ${_currentFilters.location}');
 
     try {
       Query query = _firestore
@@ -154,10 +143,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           .orderBy('createdAt', descending: true);
 
       if (_currentFilters.minAge != null) {
-        query = query.where(
-          'age',
-          isGreaterThanOrEqualTo: _currentFilters.minAge,
-        );
+        query =
+            query.where('age', isGreaterThanOrEqualTo: _currentFilters.minAge);
       }
       if (_currentFilters.maxAge != null) {
         query = query.where('age', isLessThanOrEqualTo: _currentFilters.maxAge);
@@ -175,31 +162,26 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       if (_lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
         debugPrint(
-          'DiscoverScreen: Pagination ile _lastDocument sonrası çekiliyor: ${_lastDocument!.id}',
-        );
+            'DiscoverScreen: Pagination ile _lastDocument sonrası çekiliyor: ${_lastDocument!.id}');
       } else {
         debugPrint(
-          'DiscoverScreen: İlk çekim veya sıfırlanmış çekim yapılıyor (lastDocument null).',
-        );
+            'DiscoverScreen: İlk çekim veya sıfırlanmış çekim yapılıyor (lastDocument null).');
       }
 
       QuerySnapshot querySnapshot = await query.get();
       debugPrint(
-        'DiscoverScreen: Firestore sorgu sonucu - ${querySnapshot.docs.length} yeni belge çekildi.',
-      );
+          'DiscoverScreen: Firestore sorgu sonucu - ${querySnapshot.docs.length} yeni belge çekildi.');
 
       List<DocumentSnapshot> newProfiles = querySnapshot.docs
           .where((doc) => !_seenUserIds.contains(doc.id))
           .toList();
       debugPrint(
-        'DiscoverScreen: Filtrelenen yeni profil sayısı (seenUserIds hariç): ${newProfiles.length}',
-      );
+          'DiscoverScreen: Filtrelenen yeni profil sayısı (seenUserIds hariç): ${newProfiles.length}');
 
       if (newProfiles.isEmpty && querySnapshot.docs.isEmpty) {
         _noMoreProfilesToFetch = true;
         debugPrint(
-          'DiscoverScreen: Firestore\'dan çekilecek yeni profil bulunamadı.',
-        );
+            'DiscoverScreen: Firestore\'dan çekilecek yeni profil bulunamadı.');
         if (_userProfiles.isEmpty && !isRefresh) {
           SnackBarService.showSnackBar(
             context,
@@ -216,12 +198,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         if (querySnapshot.docs.isNotEmpty) {
           _lastDocument = querySnapshot.docs.last;
           debugPrint(
-            'DiscoverScreen: _lastDocument güncellendi: ${_lastDocument!.id}',
-          );
+              'DiscoverScreen: _lastDocument güncellendi: ${_lastDocument!.id}');
         }
         debugPrint(
-          'DiscoverScreen: Güncel profil sayısı (setState sonrası): ${_userProfiles.length}',
-        );
+            'DiscoverScreen: Güncel profil sayısı (setState sonrası): ${_userProfiles.length}');
       });
     } catch (e) {
       debugPrint(
@@ -238,8 +218,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         _isLoading = false;
       });
       debugPrint(
-        'DiscoverScreen: _fetchUserProfiles tamamlandı. Final isLoading: $_isLoading, Final noMoreProfilesToFetch: $_noMoreProfilesToFetch',
-      );
+          'DiscoverScreen: _fetchUserProfiles tamamlandı. Final isLoading: $_isLoading, Final noMoreProfilesToFetch: $_noMoreProfilesToFetch');
     }
   }
 
@@ -255,11 +234,9 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         type: SnackBarType.info,
         actionLabel: 'Premium Ol',
         onActionPressed: () {
-          SnackBarService.showSnackBar(
-            context,
-            message: 'Premium ekranına yönlendiriliyorsunuz.',
-            type: SnackBarType.info,
-          );
+          SnackBarService.showSnackBar(context,
+              message: 'Premium ekranına yönlendiriliyorsunuz.',
+              type: SnackBarType.info);
         },
       );
       return;
@@ -277,8 +254,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           _likesRemainingToday--;
         });
         debugPrint(
-          'DiscoverScreen: Kalan beğeni hakkı güncellendi: $_likesRemainingToday',
-        );
+            'DiscoverScreen: Kalan beğeni hakkı güncellendi: $_likesRemainingToday');
       }
 
       await _firestore.collection('likes').add({
@@ -290,45 +266,41 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
       QuerySnapshot reciprocalLike = await _firestore
           .collection('likes')
-          .where('likerId', isEqualTo: targetUserId)
-          .where('likedId', isEqualTo: currentUser.uid)
+          .where(
+            'likerId',
+            isEqualTo: targetUserId,
+          )
+          .where(
+            'likedId',
+            isEqualTo: currentUser.uid,
+          )
           .get();
 
       if (reciprocalLike.docs.isNotEmpty) {
         debugPrint(
-          'DiscoverScreen: Eşleşme oluştu: ${currentUser.uid} ve $targetUserId',
-        );
+            'DiscoverScreen: Eşleşme oluştu: ${currentUser.uid} ve $targetUserId');
 
-        // Eşleşen kullanıcının profil verilerini al (zaten userData olarak geliyor, ama bu sadece kesinleşmiş eşleşme için)
-        // MatchFoundScreen'e göndermek için eşleşilen kullanıcının tam profil datasını alalım
-        DocumentSnapshot matchedUserDoc = await _firestore
-            .collection('users')
-            .doc(targetUserId)
-            .get();
+        DocumentSnapshot matchedUserDoc =
+            await _firestore.collection('users').doc(targetUserId).get();
         if (matchedUserDoc.exists && _currentUserProfileData != null) {
           final matchedUserProfileData =
               matchedUserDoc.data() as Map<String, dynamic>;
-          // SnackBar yerine MatchFoundScreen'i göster
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => MatchFoundScreen(
-                currentUserProfile:
-                    _currentUserProfileData!, // Mevcut kullanıcı profili
-                matchedUserProfile:
-                    matchedUserProfileData, // Eşleşen kullanıcı profili
+                currentUserProfile: _currentUserProfileData!,
+                matchedUserProfile: matchedUserProfileData,
               ),
             ),
           );
         } else {
           SnackBarService.showSnackBar(
-            // SnackBarService eklendi
             context,
             message: 'Yeni bir eşleşmen var!',
             type: SnackBarType.success,
           );
         }
 
-        // Eşleşmeyi 'matches' koleksiyonuna kaydet (bu kısım zaten vardı)
         String user1Id = currentUser.uid.compareTo(targetUserId) < 0
             ? currentUser.uid
             : targetUserId;
@@ -354,22 +326,26 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         }
       } else {
         SnackBarService.showSnackBar(
-          // SnackBarService eklendi
           context,
-          message: 'Kullanıcı beğenildi!', // Normal beğenme bildirimi
+          message: 'Kullanıcı beğenildi!',
           type: SnackBarType.info,
         );
       }
     } catch (e) {
       debugPrint(
-        'DiscoverScreen: Beğeni/Eşleşme kaydedilirken hata oluştu: $e',
-      );
+          'DiscoverScreen: Beğeni/Eşleşme kaydedilirken hata oluştu: $e');
       SnackBarService.showSnackBar(
         context,
         message: 'Beğeni veya eşleşme kaydedilemedi: ${e.toString()}',
         type: SnackBarType.error,
       );
     }
+
+    // Geri Al özelliği için son kaydırma bilgisini kaydet
+    setState(() {
+      _lastSwipedUserId = targetUserId;
+      _lastSwipedAction = 'like';
+    });
 
     _showNextProfile();
   }
@@ -386,11 +362,9 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         type: SnackBarType.info,
         actionLabel: 'Premium Ol',
         onActionPressed: () {
-          SnackBarService.showSnackBar(
-            context,
-            message: 'Premium ekranına yönlendiriliyorsunuz.',
-            type: SnackBarType.info,
-          );
+          SnackBarService.showSnackBar(context,
+              message: 'Premium ekranına yönlendiriliyorsunuz.',
+              type: SnackBarType.info);
         },
       );
       return;
@@ -408,13 +382,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           _likesRemainingToday--;
         });
         debugPrint(
-          'DiscoverScreen: Kalan kaydırma hakkı güncellendi: $_likesRemainingToday',
-        );
+            'DiscoverScreen: Kalan kaydırma hakkı güncellendi: $_likesRemainingToday');
       }
     } catch (e) {
       debugPrint(
-        'DiscoverScreen: Kaydırma hakkı güncellenirken hata oluştu: $e',
-      );
+          'DiscoverScreen: Kaydırma hakkı güncellenirken hata oluştu: $e');
       SnackBarService.showSnackBar(
         context,
         message: 'Kaydırma hakkı güncellenemedi: ${e.toString()}',
@@ -422,19 +394,128 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       );
     }
 
+    // Geri Al özelliği için son kaydırma bilgisini kaydet
+    setState(() {
+      _lastSwipedUserId = targetUserId;
+      _lastSwipedAction = 'pass';
+    });
+
     _showNextProfile();
+  }
+
+  // Yeni: Geri Al/Geri Sar (Rewind) işlemi
+  void _handleRewind() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null ||
+        !_isPremiumUser ||
+        _lastSwipedUserId == null ||
+        _lastSwipedAction == null) {
+      SnackBarService.showSnackBar(
+        context,
+        message:
+            'Geri Al özelliği Premium üyelerine özeldir veya geri alınacak bir işlem yok.',
+        type: SnackBarType.info,
+        actionLabel: 'Premium Ol',
+        onActionPressed: () {
+          SnackBarService.showSnackBar(context,
+              message: 'Premium ekranına yönlendiriliyorsunuz.',
+              type: SnackBarType.info);
+        },
+      );
+      return;
+    }
+
+    debugPrint(
+        'DiscoverScreen: Geri Al işlemi başlatıldı. Son Kaydırılan UID: $_lastSwipedUserId, Eylem: $_lastSwipedAction');
+
+    try {
+      // 1. Kullanıcıyı listeye geri ekle
+      // _lastSwipedUserId'nin profilini Firestore'dan çek
+      DocumentSnapshot lastSwipedUserDoc =
+          await _firestore.collection('users').doc(_lastSwipedUserId!).get();
+      if (lastSwipedUserDoc.exists) {
+        setState(() {
+          _userProfiles.insert(0, lastSwipedUserDoc); // Listeye en başa ekle
+          _seenUserIds
+              .remove(_lastSwipedUserId); // Görülenler listesinden çıkar
+          debugPrint(
+              'DiscoverScreen: $_lastSwipedUserId tekrar listeye eklendi.');
+        });
+      }
+
+      // 2. Firestore'daki ilgili kaydı geri al
+      if (_lastSwipedAction == 'like') {
+        // Beğeni kaydını sil
+        QuerySnapshot likeQuery = await _firestore
+            .collection('likes')
+            .where('likerId', isEqualTo: currentUser.uid)
+            .where('likedId', isEqualTo: _lastSwipedUserId)
+            .limit(1)
+            .get();
+        if (likeQuery.docs.isNotEmpty) {
+          await _firestore
+              .collection('likes')
+              .doc(likeQuery.docs.first.id)
+              .delete();
+          debugPrint('DiscoverScreen: Beğeni kaydı Firestore\'dan silindi.');
+        }
+
+        // Karşılıklı beğeni ve eşleşme varsa onu da geri al (karmaşık, şimdilik sadece beğeni silindiğinde eşleşme durumuna bakmıyoruz)
+        // Eğer eşleşme de silinecekse, matches koleksiyonunda da kontrol ve silme yapılmalı.
+        // Bu daha ileri düzey bir güvenlik ve veri tutarlılığı gerektirir.
+      } else if (_lastSwipedAction == 'pass') {
+        // Geçiş kaydını sil (eğer tutuyorsak, şu an tutmuyoruz ama ileride tutarsak)
+        // Örneğin, 'passes' adında bir koleksiyonunuz olsaydı:
+        // QuerySnapshot passQuery = await _firestore.collection('passes').where('passerId', isEqualTo: currentUser.uid).where('passedId', isEqualTo: _lastSwipedUserId).limit(1).get();
+        // if(passQuery.docs.isNotEmpty) await _firestore.collection('passes').doc(passQuery.docs.first.id).delete();
+        debugPrint(
+            'DiscoverScreen: Geçiş kaydı geri alındı (uygulama içi takip).');
+      }
+
+      // 3. Reklam sayacını ve kalan beğeni hakkını geri al (isteğe bağlı)
+      if (!_isPremiumUser) {
+        // Reklam sayacını bir azalt
+        _swipeCount--;
+        // Kalan beğeni hakkını bir artır (sadece ücretsiz kullanıcılar için)
+        await _firestore.collection('users').doc(currentUser.uid).update({
+          'likesRemainingToday': FieldValue.increment(1),
+        });
+        setState(() {
+          _likesRemainingToday++;
+        });
+        debugPrint(
+            'DiscoverScreen: Reklam sayacı ve kalan beğeni hakkı geri alındı.');
+      }
+
+      SnackBarService.showSnackBar(
+        context,
+        message: 'İşlem geri alındı!',
+        type: SnackBarType.success,
+      );
+    } catch (e) {
+      debugPrint('DiscoverScreen: Geri Al işlemi sırasında hata: $e');
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Geri Al işlemi başarısız oldu: ${e.toString()}',
+        type: SnackBarType.error,
+      );
+    } finally {
+      // Geri al işlemi tamamlandıktan sonra bilgileri sıfırla
+      setState(() {
+        _lastSwipedUserId = null;
+        _lastSwipedAction = null;
+      });
+    }
   }
 
   void _showNextProfile() {
     setState(() {
       debugPrint(
-        'DiscoverScreen: _showNextProfile çağrıldı. Mevcut profil sayısı: ${_userProfiles.length}, isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch',
-      );
+          'DiscoverScreen: _showNextProfile çağrıldı. Mevcut profil sayısı: ${_userProfiles.length}, isLoading: $_isLoading, noMoreProfilesToFetch: $_noMoreProfilesToFetch');
       if (_userProfiles.isNotEmpty) {
         _userProfiles.removeAt(0);
         debugPrint(
-          'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}',
-        );
+            'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}');
 
         if (!_isPremiumUser) {
           _swipeCount++;
@@ -448,19 +529,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
       if (_userProfiles.isEmpty && !_isLoading) {
         debugPrint(
-          'DiscoverScreen: Liste tamamen boşaldı. Yeni profil çekme denemesi yapılıyor veya Empty State gösterilecek...',
-        );
+            'DiscoverScreen: Liste tamamen boşaldı. Yeni profil çekme denemesi yapılıyor veya Empty State gösterilecek...');
         if (!_noMoreProfilesToFetch) {
           _fetchUserProfiles();
         } else {
           debugPrint(
-            'DiscoverScreen: Liste boşaldı ve Firebase\'de daha fazla profil yok. Empty State UI görünmeli.',
-          );
+              'DiscoverScreen: Liste boşaldı ve Firebase\'de daha fazla profil yok. Empty State UI görünmeli.');
         }
       } else {
         debugPrint(
-          'DiscoverScreen: Profil çekme koşulu karşılanmadı. Mevcut _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch',
-        );
+            'DiscoverScreen: Profil çekme koşulu karşılanmadı. Mevcut _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch');
       }
     });
   }
@@ -532,13 +610,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     super.build(context);
 
     debugPrint(
-      'DiscoverScreen: Build metodu çalıştı. _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch',
-    );
+        'DiscoverScreen: Build metodu çalıştı. _userProfiles.length: ${_userProfiles.length}, _isLoading: $_isLoading, _noMoreProfilesToFetch: $_noMoreProfilesToFetch');
 
     final double appBarHeight = AppBar().preferredSize.height;
     final double bottomNavBarHeight = kBottomNavigationBarHeight;
-    final double availableHeight =
-        MediaQuery.of(context).size.height -
+    final double availableHeight = MediaQuery.of(context).size.height -
         appBarHeight -
         bottomNavBarHeight -
         32;
@@ -559,10 +635,20 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.tune),
-            onPressed: _openFilterScreen,
+            icon: const Icon(Icons.tune), // Filtre ikonu
+            onPressed: _openFilterScreen, // Filtre ekranını aç
             tooltip: 'Filtrele',
           ),
+          // Yeni: Geri Al (Rewind) butonu
+          if (_isPremiumUser &&
+              _lastSwipedUserId !=
+                  null) // Sadece premium ve geri alınacak işlem varsa göster
+            IconButton(
+              icon: Icon(Icons.undo,
+                  color: AppColors.primaryText), // Geri al ikonu
+              onPressed: _handleRewind,
+              tooltip: 'Geri Al',
+            ),
         ],
       ),
       body: Builder(
@@ -576,17 +662,15 @@ class _DiscoverScreenState extends State<DiscoverScreen>
               description: _isPremiumUser
                   ? 'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha fazla kişiyle tanışmak için filtrelerini ayarlayabilirsin.'
                   : 'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha hızlı bağlantılar kurmak için Canlı Sohbet\'i denemek ister misin?',
-              buttonText: _isPremiumUser
-                  ? 'Filtreleri Ayarla'
-                  : 'Canlı Sohbet\'e Git',
+              buttonText:
+                  _isPremiumUser ? 'Filtreleri Ayarla' : 'Canlı Sohbet\'e Git',
               onButtonPressed: () {
                 if (_isPremiumUser) {
                   _openFilterScreen();
                 } else {
-                  Provider.of<TabNavigationProvider>(
-                    innerContext,
-                    listen: false,
-                  ).setIndex(5);
+                  Provider.of<TabNavigationProvider>(innerContext,
+                          listen: false)
+                      .setIndex(5);
                 }
               },
             );
@@ -598,9 +682,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                     alignment: Alignment.center,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0,
-                        vertical: 8.0,
-                      ),
+                          horizontal: 16.0, vertical: 8.0),
                       child: SizedBox(
                         width: MediaQuery.of(innerContext).size.width * 0.9,
                         height: availableHeight,
