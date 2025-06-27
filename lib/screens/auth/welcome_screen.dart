@@ -1,112 +1,80 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
-import 'package:connectify_app/services/auth_service.dart';
-import 'package:connectify_app/screens/home_screen.dart'; // HomeScreen'i import et
-import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // ProfileSetupScreen'i import et
-import 'package:firebase_auth/firebase_auth.dart'; // User sınıfı için
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore için
-import 'package:connectify_app/screens/auth/email_auth_screen.dart'; // EmailAuthScreen'e yönlendirme için
+import 'package:connectify_app/screens/auth/email_auth_screen.dart'; // E-posta/Şifre ekranı
+import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Profil oluşturma ekranı
+import 'package:connectify_app/screens/home_screen.dart'; // Anasayfa
+import 'package:google_sign_in/google_sign_in.dart'; // Google Sign-In için
+import 'package:firebase_auth/firebase_auth.dart'; // Firebase kimlik doğrulama için
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService için
+import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
 
-class WelcomeScreen extends StatefulWidget {
+class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
-  @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
-}
-
-class _WelcomeScreenState extends State<WelcomeScreen> {
-  final AuthService _authService = AuthService();
-
-  // YÖNLENDİRME YARDIMCI FONKSİYONU (EN SON VE KESİN VERSİYON)
-  Future<void> _checkProfileAndNavigate(User? user) async {
-    if (user == null || !mounted) {
-      debugPrint(
-        'WelcomeScreen: _checkProfileAndNavigate -- User null veya widget bağlı değil. Çıkılıyor. (KESİN VERSİYON)',
-      ); // KESİN TEKİL LOG
-      return;
-    }
-
-    debugPrint(
-      'WelcomeScreen: _checkProfileAndNavigate başlatıldı. UID: ${user.uid} (KESİN VERSİYON)',
-    ); // KESİN TEKİL LOG
+  // Google ile giriş yapma fonksiyonu
+  Future<void> _signInWithGoogle(BuildContext context) async {
     try {
-      debugPrint(
-        'WelcomeScreen: Firestore belge çekiliyor: users/${user.uid} (KESİN VERSİYON)',
-      ); // KESİN TEKİL LOG
-      DocumentSnapshot profileDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      debugPrint(
-        'WelcomeScreen: Firestore belge çekildi. exists: ${profileDoc.exists} (KESİN VERSİYON)',
-      ); // KESİN TEKİL LOG
-
-      if (profileDoc.exists) {
-        final userData = profileDoc.data() as Map<String, dynamic>?;
-        debugPrint(
-          'WelcomeScreen: Profil verisi mevcut. isProfileCompleted: ${userData?['isProfileCompleted']} (KESİN VERSİYON)',
-        ); // KESİN TEKİL LOG
-
-        if (userData != null && userData['isProfileCompleted'] == true) {
-          debugPrint(
-            'WelcomeScreen: YÖNLENDİRİLİYOR --> HomeScreen (KESİN VERSİYON)',
-          ); // KESİN TEKİL LOG
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-            (route) => false,
-          );
-        } else {
-          debugPrint(
-            'WelcomeScreen: YÖNLENDİRİLİYOR --> ProfileSetupScreen (mevcut ama tamamlanmamış) (KESİN VERSİYON)',
-          ); // KESİN TEKİL LOG
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (context) => const ProfileSetupScreen(initialData: null),
-            ),
-            (route) => false,
-          );
-        }
-      } else {
-        debugPrint(
-          'WelcomeScreen: YÖNLENDİRİLİYOR --> ProfileSetupScreen (profil yok) (KESİN VERSİYON)',
-        ); // KESİN TEKİL LOG
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const ProfileSetupScreen()),
-          (route) => false,
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        // Kullanıcı Google girişini iptal etti
+        SnackBarService.showSnackBar(
+          context,
+          message: 'Google ile giriş iptal edildi.',
+          type: SnackBarType.info,
         );
+        return;
       }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential = await FirebaseAuth.instance
+          .signInWithCredential(credential);
+
+      if (userCredential.user != null) {
+        SnackBarService.showSnackBar(
+          context,
+          message: 'Google ile başarıyla giriş yapıldı!',
+          type: SnackBarType.success,
+        );
+        // Kullanıcıyı yönlendir
+        _handleAuthNavigation(context, userCredential.user!);
+      }
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Google Sign-In Hatası: ${e.code} - ${e.message}');
+      String errorMessage = 'Google ile giriş başarısız oldu.';
+      if (e.code == 'account-exists-with-different-credential') {
+        errorMessage = 'Bu e-posta adresi farklı bir yöntemle zaten kayıtlı.';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'İnternet bağlantınızı kontrol edin.';
+      }
+      SnackBarService.showSnackBar(
+        context,
+        message: errorMessage,
+        type: SnackBarType.error,
+      );
     } catch (e) {
-      debugPrint(
-        'WelcomeScreen: HATA oluştu - ${e.toString()}. YÖNLENDİRİLİYOR --> ProfileSetupScreen (hata durumu) (KESİN VERSİYON)',
-      ); // KESİN TEKİL LOG
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const ProfileSetupScreen()),
-        (route) => false,
+      debugPrint('Genel Google Sign-In Hatası: $e');
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Google ile giriş yapılırken bir hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
       );
     }
   }
 
-  // Google ile giriş fonksiyonu (EN SON VE KESİN VERSİYON)
-  Future<void> _handleGoogleSignIn() async {
-    final userCredential = await _authService.signInWithGoogle();
-    if (userCredential != null) {
-      debugPrint("Google Girişi Başarılı: ${userCredential.user?.email}");
-      if (mounted) {
-        // Yeni yönlendirme mantığını çağır
-        await _checkProfileAndNavigate(userCredential.user);
-      }
-    } else {
-      debugPrint("Google Girişi İptal Edildi veya Başarısız Oldu.");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Google ile giriş başarısız oldu. Lütfen tekrar deneyin.',
-            ),
-          ),
-        );
-      }
-    }
+  // Kullanıcının profil durumuna göre yönlendirme
+  void _handleAuthNavigation(BuildContext context, User user) {
+    // Profilin tamamlanıp tamamlanmadığını burada veya AuthWrapper'da kontrol et.
+    // AuthWrapper zaten bu kontrolü yapıyor, bu yüzden doğrudan ana ekrana yönlendir.
+    // Eğer profil eksikse AuthWrapper ProfileSetupScreen'e yönlendirecektir.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      (Route<dynamic> route) => false,
+    );
   }
 
   @override
@@ -114,138 +82,104 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Arka Plan Görseli veya Gradient
+          // Arka plan gradyanı veya resmi
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  Color(0xFFFEE140), // Bumble'a benzer sarı
-                  Color(0xFFFA709A), // Hafif pembemsi ton
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                colors: [AppColors.primaryYellow, AppColors.accentPink],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
             ),
           ),
-          // İçerik
-          SafeArea(
+          Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 48.0,
-              ),
+              padding: const EdgeInsets.all(24.0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Uygulama Logosu/Adı (Örnek metin)
-                  const Text(
+                  Text(
                     'Connectify',
-                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          blurRadius: 10.0,
-                          color: Colors.black26,
-                          offset: Offset(2.0, 2.0),
-                        ),
-                      ],
+                      color: AppColors.white,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Anlamlı Bağlantılar Kurun.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 20, color: Colors.white70),
+                  Text(
+                    'Anlamlı Bağlantılar Kurun',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: AppColors.white.withOpacity(0.8),
+                    ),
                   ),
                   const SizedBox(height: 80),
-
-                  // Google Giriş Butonu
-                  _buildSocialLoginButton(
-                    context,
-                    text: 'Google ile Devam Et',
-                    icon: Icons.g_mobiledata,
-                    color: Colors.white,
-                    textColor: Colors.black87,
-                    onPressed: _handleGoogleSignIn,
+                  // Google ile devam et butonu
+                  ElevatedButton.icon(
+                    onPressed: () => _signInWithGoogle(context),
+                    icon: Image.asset(
+                      'assets/images/google_logo.png',
+                      height: 24,
+                    ), // Google logosu
+                    label: const Text('Google ile Devam Et'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.white,
+                      foregroundColor: AppColors.black,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  // Apple ID Giriş Butonu (Şimdilik işlevsiz, daha sonra entegre edilecek)
-                  _buildSocialLoginButton(
-                    context,
-                    text: 'Apple ID ile Devam Et',
-                    icon: Icons.apple,
-                    color: Colors.black,
-                    textColor: Colors.white,
+                  // E-posta ile devam et butonu
+                  ElevatedButton.icon(
                     onPressed: () {
-                      debugPrint('Apple ID ile Devam Et tıklandı (Yakında!)');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Apple ID ile giriş yakında aktif olacak.',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  // E-posta ile Giriş Butonu
-                  _buildOutlineButton(
-                    context,
-                    text: 'E-posta ile Devam Et',
-                    onPressed: () {
-                      // YENİ: EmailAuthScreen'e git
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (context) => const EmailAuthScreen(),
                         ),
                       );
-                      debugPrint('E-posta ile Devam Et tıklandı');
                     },
-                  ),
-                  const SizedBox(height: 24),
-                  // Kullanım Koşulları ve Gizlilik Politikası metni
-                  Text.rich(
-                    TextSpan(
-                      text: 'Devam ederek ',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                      children: [
-                        TextSpan(
-                          text: 'Kullanım Koşullarımızı',
-                          style: TextStyle(
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                          ),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = () {
-                              debugPrint('Kullanım Koşulları tıklandı');
-                            },
-                        ),
-                        TextSpan(
-                          text: ' ve ',
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                        TextSpan(
-                          text: 'Gizlilik Politikamızı',
-                          style: TextStyle(
-                            color: Colors.white,
-                            decoration: TextDecoration.underline,
-                          ),
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = () {
-                              debugPrint('Gizlilik Politikası tıklandı');
-                            },
-                        ),
-                        TextSpan(
-                          text: ' kabul etmiş olursunuz.',
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                      ],
+                    icon: Icon(Icons.email, color: AppColors.white),
+                    label: const Text('E-posta ile Devam Et'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentTeal,
+                      foregroundColor: AppColors.white,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 40),
+                  TextButton(
+                    onPressed: () {
+                      // Gizlilik politikası veya kullanım koşulları
+                      SnackBarService.showSnackBar(
+                        context,
+                        message:
+                            'Kullanım Koşulları ve Gizlilik Politikası yakında.',
+                        type: SnackBarType.info,
+                      );
+                    },
+                    child: Text(
+                      'Kullanım Koşulları ve Gizlilik Politikası',
+                      style: TextStyle(
+                        color: AppColors.white.withOpacity(0.7),
+                        fontSize: 14,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -253,49 +187,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  // Sosyal medya giriş butonları için yardımcı widget
-  Widget _buildSocialLoginButton(
-    BuildContext context, {
-    required String text,
-    required IconData icon,
-    required Color color,
-    required Color textColor,
-    required VoidCallback onPressed,
-  }) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: textColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        elevation: 3,
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-      ),
-      icon: Icon(icon, size: 24),
-      label: Text(text),
-    );
-  }
-
-  // Ana hatlı (Outline) buton için yardımcı widget
-  Widget _buildOutlineButton(
-    BuildContext context, {
-    required String text,
-    required VoidCallback onPressed,
-  }) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: const BorderSide(color: Colors.white, width: 2),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-      ),
-      child: Text(text),
     );
   }
 }

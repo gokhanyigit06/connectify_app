@@ -8,7 +8,8 @@ import 'package:connectify_app/utils/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:connectify_app/providers/tab_navigation_provider.dart';
 import 'package:connectify_app/services/snackbar_service.dart';
-import 'package:connectify_app/screens/filter_screen.dart'; // FilterScreen import edildi
+import 'package:connectify_app/screens/filter_screen.dart';
+import 'package:connectify_app/screens/match_found_screen.dart'; // Yeni: MatchFoundScreen import edildi
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -28,23 +29,54 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   final List<String> _seenUserIds = [];
 
   bool _noMoreProfilesToFetch = false;
-  bool _isPremiumUser = false; // Kullanıcının premium durumu
-  int _swipeCount = 0; // Kaydırma sayacı
-  int _likesRemainingToday = 0; // Bugün kalan beğeni/kaydırma hakkı
+  bool _isPremiumUser = false;
+  int _swipeCount = 0;
+  int _likesRemainingToday = 0;
 
   FilterCriteria _currentFilters = FilterCriteria();
+  Map<String, dynamic>?
+  _currentUserProfileData; // Yeni: Mevcut kullanıcının profil verisi
 
   @override
   void initState() {
     super.initState();
-    _checkUserPremiumStatus(); // Kullanıcının premium durumunu kontrol et ve beğeni hakkını çek
+    _fetchCurrentUserProfile(); // Mevcut kullanıcının profilini çek
+    _checkUserPremiumStatus();
     _fetchUserProfiles(isInitialLoad: true);
   }
 
   @override
   bool get wantKeepAlive => true;
 
-  // Kullanıcının premium durumunu ve kalan beğeni hakkını Firestore'dan çeken metod
+  // Mevcut kullanıcının profilini çeken fonksiyon
+  Future<void> _fetchCurrentUserProfile() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          _currentUserProfileData = userDoc.data() as Map<String, dynamic>;
+        });
+        debugPrint(
+          'DiscoverScreen: Mevcut kullanıcı profili çekildi: ${_currentUserProfileData?['name']}',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'DiscoverScreen: Mevcut kullanıcı profili çekilirken hata: $e',
+      );
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Kendi profiliniz yüklenirken hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
+      );
+    }
+  }
+
   Future<void> _checkUserPremiumStatus() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
@@ -121,7 +153,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           .orderBy('uid', descending: true)
           .orderBy('createdAt', descending: true);
 
-      // --- Filtreleri sorguya uygulama ---
       if (_currentFilters.minAge != null) {
         query = query.where(
           'age',
@@ -138,7 +169,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       if (_currentFilters.location != null) {
         query = query.where('location', isEqualTo: _currentFilters.location);
       }
-      // --- Filtreleme sonu ---
 
       query = query.limit(10);
 
@@ -213,12 +243,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     }
   }
 
-  // Beğeni (Like) işlemi
   void _handleLike(String targetUserId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
-    // Sınırsız Beğeni/Kaydırma Kuralı Başlangıcı
     if (!_isPremiumUser && _likesRemainingToday <= 0) {
       SnackBarService.showSnackBar(
         context,
@@ -227,30 +255,26 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         type: SnackBarType.info,
         actionLabel: 'Premium Ol',
         onActionPressed: () {
-          // Premium satın alma ekranına yönlendirme
           SnackBarService.showSnackBar(
             context,
             message: 'Premium ekranına yönlendiriliyorsunuz.',
             type: SnackBarType.info,
           );
-          // Navigator.of(context).push(MaterialPageRoute(builder: (context) => PremiumScreen())); // İleride eklenecek
         },
       );
-      return; // Beğeni işlemini durdur
+      return;
     }
-    // Sınırsız Beğeni/Kaydırma Kuralı Sonu
 
     debugPrint('DiscoverScreen: Beğenildi: $targetUserId');
     _seenUserIds.add(targetUserId);
 
     try {
-      // Eğer kullanıcı premium değilse, kalan beğeni hakkını azalt
       if (!_isPremiumUser) {
         await _firestore.collection('users').doc(currentUser.uid).update({
-          'likesRemainingToday': FieldValue.increment(-1), // Hakkı 1 azalt
+          'likesRemainingToday': FieldValue.increment(-1),
         });
         setState(() {
-          _likesRemainingToday--; // UI'da da güncelleyici
+          _likesRemainingToday--;
         });
         debugPrint(
           'DiscoverScreen: Kalan beğeni hakkı güncellendi: $_likesRemainingToday',
@@ -275,6 +299,36 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           'DiscoverScreen: Eşleşme oluştu: ${currentUser.uid} ve $targetUserId',
         );
 
+        // Eşleşen kullanıcının profil verilerini al (zaten userData olarak geliyor, ama bu sadece kesinleşmiş eşleşme için)
+        // MatchFoundScreen'e göndermek için eşleşilen kullanıcının tam profil datasını alalım
+        DocumentSnapshot matchedUserDoc = await _firestore
+            .collection('users')
+            .doc(targetUserId)
+            .get();
+        if (matchedUserDoc.exists && _currentUserProfileData != null) {
+          final matchedUserProfileData =
+              matchedUserDoc.data() as Map<String, dynamic>;
+          // SnackBar yerine MatchFoundScreen'i göster
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => MatchFoundScreen(
+                currentUserProfile:
+                    _currentUserProfileData!, // Mevcut kullanıcı profili
+                matchedUserProfile:
+                    matchedUserProfileData, // Eşleşen kullanıcı profili
+              ),
+            ),
+          );
+        } else {
+          SnackBarService.showSnackBar(
+            // SnackBarService eklendi
+            context,
+            message: 'Yeni bir eşleşmen var!',
+            type: SnackBarType.success,
+          );
+        }
+
+        // Eşleşmeyi 'matches' koleksiyonuna kaydet (bu kısım zaten vardı)
         String user1Id = currentUser.uid.compareTo(targetUserId) < 0
             ? currentUser.uid
             : targetUserId;
@@ -295,14 +349,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             'createdAt': FieldValue.serverTimestamp(),
           });
           debugPrint('DiscoverScreen: Eşleşme Firestore\'a kaydedildi.');
-          SnackBarService.showSnackBar(
-            context,
-            message: 'Yeni bir eşleşmen var!',
-            type: SnackBarType.success,
-          );
         } else {
           debugPrint('DiscoverScreen: Eşleşme zaten mevcut.');
         }
+      } else {
+        SnackBarService.showSnackBar(
+          // SnackBarService eklendi
+          context,
+          message: 'Kullanıcı beğenildi!', // Normal beğenme bildirimi
+          type: SnackBarType.info,
+        );
       }
     } catch (e) {
       debugPrint(
@@ -319,11 +375,9 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   }
 
   void _handlePass(String targetUserId) async {
-    // async eklendi
-    final currentUser = _auth.currentUser; // currentUser'ı tekrar al
+    final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
-    // Sınırsız Beğeni/Kaydırma Kuralı Başlangıcı (Geçme için de limit kontrolü)
     if (!_isPremiumUser && _likesRemainingToday <= 0) {
       SnackBarService.showSnackBar(
         context,
@@ -332,7 +386,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         type: SnackBarType.info,
         actionLabel: 'Premium Ol',
         onActionPressed: () {
-          // Premium satın alma ekranına yönlendirme
           SnackBarService.showSnackBar(
             context,
             message: 'Premium ekranına yönlendiriliyorsunuz.',
@@ -340,21 +393,19 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           );
         },
       );
-      return; // Geçme işlemini durdur
+      return;
     }
-    // Sınırsız Beğeni/Kaydırma Kuralı Sonu
 
     debugPrint('DiscoverScreen: Geçildi: $targetUserId');
     _seenUserIds.add(targetUserId);
 
     try {
-      // Eğer kullanıcı premium değilse, kalan beğeni hakkını azalt (geçme de hakkı düşürür)
       if (!_isPremiumUser) {
         await _firestore.collection('users').doc(currentUser.uid).update({
-          'likesRemainingToday': FieldValue.increment(-1), // Hakkı 1 azalt
+          'likesRemainingToday': FieldValue.increment(-1),
         });
         setState(() {
-          _likesRemainingToday--; // UI'da da güncelleyici
+          _likesRemainingToday--;
         });
         debugPrint(
           'DiscoverScreen: Kalan kaydırma hakkı güncellendi: $_likesRemainingToday',
@@ -385,12 +436,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}',
         );
 
-        // Reklam mantığı: Sadece premium kullanıcı değilse reklam göster
         if (!_isPremiumUser) {
           _swipeCount++;
           debugPrint('DiscoverScreen: Kaydırma Sayısı: $_swipeCount');
 
-          // Reklam her 6 kaydırmada bir görünecek
           if (_swipeCount % 6 == 0 && _swipeCount != 0) {
             _showAdPlaceholder();
           }
@@ -416,7 +465,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     });
   }
 
-  // Reklam yer tutucu (placeholder) fonksiyonu
   void _showAdPlaceholder() {
     showDialog(
       context: context,
@@ -511,11 +559,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.tune), // Filtre ikonu
-            onPressed: _openFilterScreen, // Filtre ekranını aç
+            icon: const Icon(Icons.tune),
+            onPressed: _openFilterScreen,
             tooltip: 'Filtrele',
           ),
-          // Kalan beğeni hakkını gösteren kod kaldırıldı
         ],
       ),
       body: Builder(
