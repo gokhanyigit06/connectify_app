@@ -28,19 +28,55 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   final List<String> _seenUserIds = [];
 
   bool _noMoreProfilesToFetch = false;
+  bool _isPremiumUser = false; // Kullanıcının premium durumu
+  int _swipeCount = 0; // Kaydırma sayacı
+  int _likesRemainingToday = 0; // Bugün kalan beğeni/kaydırma hakkı
 
   FilterCriteria _currentFilters = FilterCriteria();
-
-  int _swipeCount = 0; // Yeni: Kaydırma sayacı
 
   @override
   void initState() {
     super.initState();
+    _checkUserPremiumStatus(); // Kullanıcının premium durumunu kontrol et ve beğeni hakkını çek
     _fetchUserProfiles(isInitialLoad: true);
   }
 
   @override
   bool get wantKeepAlive => true;
+
+  // Kullanıcının premium durumunu ve kalan beğeni hakkını Firestore'dan çeken metod
+  Future<void> _checkUserPremiumStatus() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      DocumentSnapshot userDoc = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          _isPremiumUser =
+              (userDoc.data() as Map<String, dynamic>)['isPremium'] ?? false;
+          _likesRemainingToday =
+              (userDoc.data() as Map<String, dynamic>)['likesRemainingToday'] ??
+              0;
+        });
+        debugPrint(
+          'DiscoverScreen: Kullanıcı premium durumu: $_isPremiumUser, Kalan Beğeni: $_likesRemainingToday',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'DiscoverScreen: Premium durumu veya kalan beğeni çekilirken hata: $e',
+      );
+      SnackBarService.showSnackBar(
+        context,
+        message:
+            'Premium durumu veya kalan beğeni yüklenirken hata oluştu: ${e.toString()}',
+        type: SnackBarType.error,
+      );
+    }
+  }
 
   Future<void> _fetchUserProfiles({
     bool isInitialLoad = false,
@@ -85,6 +121,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           .orderBy('uid', descending: true)
           .orderBy('createdAt', descending: true);
 
+      // --- Filtreleri sorguya uygulama ---
       if (_currentFilters.minAge != null) {
         query = query.where(
           'age',
@@ -101,6 +138,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       if (_currentFilters.location != null) {
         query = query.where('location', isEqualTo: _currentFilters.location);
       }
+      // --- Filtreleme sonu ---
 
       query = query.limit(10);
 
@@ -175,14 +213,50 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     }
   }
 
+  // Beğeni (Like) işlemi
   void _handleLike(String targetUserId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
+
+    // Sınırsız Beğeni/Kaydırma Kuralı Başlangıcı
+    if (!_isPremiumUser && _likesRemainingToday <= 0) {
+      SnackBarService.showSnackBar(
+        context,
+        message:
+            'Bugünlük beğeni limitini doldurdun! Sınırsız beğeni için Premium ol.',
+        type: SnackBarType.info,
+        actionLabel: 'Premium Ol',
+        onActionPressed: () {
+          // Premium satın alma ekranına yönlendirme
+          SnackBarService.showSnackBar(
+            context,
+            message: 'Premium ekranına yönlendiriliyorsunuz.',
+            type: SnackBarType.info,
+          );
+          // Navigator.of(context).push(MaterialPageRoute(builder: (context) => PremiumScreen())); // İleride eklenecek
+        },
+      );
+      return; // Beğeni işlemini durdur
+    }
+    // Sınırsız Beğeni/Kaydırma Kuralı Sonu
 
     debugPrint('DiscoverScreen: Beğenildi: $targetUserId');
     _seenUserIds.add(targetUserId);
 
     try {
+      // Eğer kullanıcı premium değilse, kalan beğeni hakkını azalt
+      if (!_isPremiumUser) {
+        await _firestore.collection('users').doc(currentUser.uid).update({
+          'likesRemainingToday': FieldValue.increment(-1), // Hakkı 1 azalt
+        });
+        setState(() {
+          _likesRemainingToday--; // UI'da da güncelleyici
+        });
+        debugPrint(
+          'DiscoverScreen: Kalan beğeni hakkı güncellendi: $_likesRemainingToday',
+        );
+      }
+
       await _firestore.collection('likes').add({
         'likerId': currentUser.uid,
         'likedId': targetUserId,
@@ -244,9 +318,59 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     _showNextProfile();
   }
 
-  void _handlePass(String targetUserId) {
+  void _handlePass(String targetUserId) async {
+    // async eklendi
+    final currentUser = _auth.currentUser; // currentUser'ı tekrar al
+    if (currentUser == null) return;
+
+    // Sınırsız Beğeni/Kaydırma Kuralı Başlangıcı (Geçme için de limit kontrolü)
+    if (!_isPremiumUser && _likesRemainingToday <= 0) {
+      SnackBarService.showSnackBar(
+        context,
+        message:
+            'Bugünlük kaydırma limitini doldurdun! Sınırsız kaydırma için Premium ol.',
+        type: SnackBarType.info,
+        actionLabel: 'Premium Ol',
+        onActionPressed: () {
+          // Premium satın alma ekranına yönlendirme
+          SnackBarService.showSnackBar(
+            context,
+            message: 'Premium ekranına yönlendiriliyorsunuz.',
+            type: SnackBarType.info,
+          );
+        },
+      );
+      return; // Geçme işlemini durdur
+    }
+    // Sınırsız Beğeni/Kaydırma Kuralı Sonu
+
     debugPrint('DiscoverScreen: Geçildi: $targetUserId');
     _seenUserIds.add(targetUserId);
+
+    try {
+      // Eğer kullanıcı premium değilse, kalan beğeni hakkını azalt (geçme de hakkı düşürür)
+      if (!_isPremiumUser) {
+        await _firestore.collection('users').doc(currentUser.uid).update({
+          'likesRemainingToday': FieldValue.increment(-1), // Hakkı 1 azalt
+        });
+        setState(() {
+          _likesRemainingToday--; // UI'da da güncelleyici
+        });
+        debugPrint(
+          'DiscoverScreen: Kalan kaydırma hakkı güncellendi: $_likesRemainingToday',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'DiscoverScreen: Kaydırma hakkı güncellenirken hata oluştu: $e',
+      );
+      SnackBarService.showSnackBar(
+        context,
+        message: 'Kaydırma hakkı güncellenemedi: ${e.toString()}',
+        type: SnackBarType.error,
+      );
+    }
+
     _showNextProfile();
   }
 
@@ -260,15 +384,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         debugPrint(
           'DiscoverScreen: Bir profil kaldırıldı. Yeni profil sayısı: ${_userProfiles.length}',
         );
-        _swipeCount++; // Her kaydırmada sayacı artır
-        debugPrint('DiscoverScreen: Kaydırma Sayısı: $_swipeCount');
 
-        if (_swipeCount % 6 == 0 && _swipeCount != 0) {
-          // Her 6 kaydırmada bir reklam göster (şimdilik AlertDialog)
-          _showAdPlaceholder();
-          // _swipeCount = 0; // Reklam gösterildikten sonra sayacı sıfırlayabiliriz veya devam ettirebiliriz.
-          // Reklamın her 6 kaydırmada bir görünmesini istiyorsak sıfırlamayız.
-          // AdMob entegrasyonunda reklamın yüklenip gösterilmesi ayrı bir süreçtir.
+        // Reklam mantığı: Sadece premium kullanıcı değilse reklam göster
+        if (!_isPremiumUser) {
+          _swipeCount++;
+          debugPrint('DiscoverScreen: Kaydırma Sayısı: $_swipeCount');
+
+          // Reklam her 6 kaydırmada bir görünecek
+          if (_swipeCount % 6 == 0 && _swipeCount != 0) {
+            _showAdPlaceholder();
+          }
         }
       }
 
@@ -299,24 +424,20 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         return AlertDialog(
           title: Text(
             "Reklam Alanı",
-            style: TextStyle(color: AppColors.primaryText), // Renk paletinden
+            style: TextStyle(color: AppColors.primaryText),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Image.network(
-                "https://placehold.co/300x250/FFC300/000000?text=AD", // Reklam görseli için yer tutucu
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.image_not_supported,
-                  color: AppColors.red,
-                ), // Renk paletinden
+                "https://placehold.co/300x250/FFC300/000000?text=AD",
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(Icons.image_not_supported, color: AppColors.red),
               ),
               const SizedBox(height: 10),
               Text(
                 "Burada reklamınız gösterilecektir.",
-                style: TextStyle(
-                  color: AppColors.secondaryText,
-                ), // Renk paletinden
+                style: TextStyle(color: AppColors.secondaryText),
               ),
             ],
           ),
@@ -324,9 +445,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             TextButton(
               child: Text(
                 "Kapat",
-                style: TextStyle(
-                  color: AppColors.accentPink,
-                ), // Renk paletinden
+                style: TextStyle(color: AppColors.accentPink),
               ),
               onPressed: () {
                 Navigator.of(context).pop();
@@ -396,6 +515,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             onPressed: _openFilterScreen, // Filtre ekranını aç
             tooltip: 'Filtrele',
           ),
+          // Kalan beğeni hakkını gösteren kod kaldırıldı
         ],
       ),
       body: Builder(
@@ -406,14 +526,21 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             return EmptyStateWidget(
               icon: Icons.mood_bad_outlined,
               title: 'Keşfedilecek Kimse Yok',
-              description:
-                  'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha hızlı bağlantılar kurmak için Canlı Sohbet\'i denemek ister misin?',
-              buttonText: 'Canlı Sohbet\'e Git',
+              description: _isPremiumUser
+                  ? 'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha fazla kişiyle tanışmak için filtrelerini ayarlayabilirsin.'
+                  : 'Görünüşe göre şu an gösterilecek yeni profil kalmadı. Daha hızlı bağlantılar kurmak için Canlı Sohbet\'i denemek ister misin?',
+              buttonText: _isPremiumUser
+                  ? 'Filtreleri Ayarla'
+                  : 'Canlı Sohbet\'e Git',
               onButtonPressed: () {
-                Provider.of<TabNavigationProvider>(
-                  innerContext,
-                  listen: false,
-                ).setIndex(5);
+                if (_isPremiumUser) {
+                  _openFilterScreen();
+                } else {
+                  Provider.of<TabNavigationProvider>(
+                    innerContext,
+                    listen: false,
+                  ).setIndex(5);
+                }
               },
             );
           } else {

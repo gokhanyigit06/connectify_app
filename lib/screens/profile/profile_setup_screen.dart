@@ -206,7 +206,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             .trim(), // Yeni: Konum bilgisini kaydet
         'isProfileCompleted': true,
         'isPremium': widget.initialData?['isPremium'] ?? false,
-        'likesRemainingToday': widget.initialData?['likesRemainingToday'] ?? 20,
+        'likesRemainingToday': widget.initialData?['likesRemainingToday'] ?? 25,
         'messagesRemainingToday':
             widget.initialData?['messagesRemainingToday'] ?? 5,
         'createdAt':
