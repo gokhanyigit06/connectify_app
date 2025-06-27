@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
+import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
 
 class SingleChatScreen extends StatefulWidget {
   final Map<String, dynamic> matchedUser; // Sohbet edilen kişinin bilgileri
@@ -16,15 +18,18 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _messageController = TextEditingController();
 
-  // Match ID'sini bulmak için değişken
-  String? _matchId;
+  String?
+  _chatId; // Yeni: Sohbet ID'si (matches ID yerine chats koleksiyonu ID'si)
   String? _currentUserId;
+  String? _matchedUserId; // Eşleşilen kullanıcının UID'si
 
   @override
   void initState() {
     super.initState();
     _currentUserId = _auth.currentUser?.uid;
-    _findMatchId(); // Match ID'sini bulmak için çağır
+    _matchedUserId =
+        widget.matchedUser['uid']; // Eşleşilen kullanıcının UID'sini al
+    _setChatId(); // Sohbet ID'sini ayarla
   }
 
   @override
@@ -33,75 +38,91 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
     super.dispose();
   }
 
-  // Current user ile matchedUser arasındaki match ID'yi bulur
-  Future<void> _findMatchId() async {
-    if (_currentUserId == null) return;
+  // Current user ile matchedUser arasındaki sohbet ID'sini ayarlar
+  void _setChatId() {
+    if (_currentUserId == null || _matchedUserId == null) return;
 
-    // user1Id ve user2Id her zaman alfabetik sıraya göre kaydedildiği için aynı mantıkla arayalım
-    String user1Id = _currentUserId!.compareTo(widget.matchedUser['uid']) < 0
-        ? _currentUserId!
-        : widget.matchedUser['uid'];
-    String user2Id = _currentUserId!.compareTo(widget.matchedUser['uid']) < 0
-        ? widget.matchedUser['uid']
-        : _currentUserId!;
-
-    try {
-      QuerySnapshot matchQuery = await _firestore
-          .collection('matches')
-          .where('user1Id', isEqualTo: user1Id)
-          .where('user2Id', isEqualTo: user2Id)
-          .get();
-
-      if (matchQuery.docs.isNotEmpty) {
-        setState(() {
-          _matchId = matchQuery.docs.first.id;
-        });
-        debugPrint('SingleChatScreen: Match ID bulundu: $_matchId');
-      } else {
-        debugPrint(
-          'SingleChatScreen: Match ID bulunamadı. Sohbet başlatılamaz.',
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Eşleşme bulunamadı, mesaj gönderilemiyor.'),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('SingleChatScreen: Match ID bulunurken hata: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Sohbet başlatılırken hata: $e')));
+    // UID'leri alfabetik sıraya göre birleştirerek tutarlı bir sohbet ID'si oluşturur
+    // Bu, _getChatId fonksiyonuna benzer mantıkta
+    if (_currentUserId!.compareTo(_matchedUserId!) < 0) {
+      _chatId = '${_currentUserId!}_${_matchedUserId!}';
+    } else {
+      _chatId = '${_matchedUserId!}_${_currentUserId!}';
     }
+    debugPrint('SingleChatScreen: Chat ID belirlendi: $_chatId');
   }
 
   // Mesaj gönderme fonksiyonu
   Future<void> _sendMessage() async {
     if (_messageController.text.trim().isEmpty ||
-        _matchId == null ||
+        _chatId == null || // Match ID yerine Chat ID kontrolü
         _currentUserId == null) {
-      return; // Boş mesaj gönderme veya match/kullanıcı ID yoksa
+      return; // Boş mesaj gönderme veya chat/kullanıcı ID yoksa
     }
 
     try {
+      // 1. Sohbet belgesini (chats/{chatId}) oluştur veya güncelle
+      // Eğer belge yoksa oluşturur, varsa birleştirir.
+      await _firestore.collection('chats').doc(_chatId).set(
+        {
+          'user1Id': _currentUserId,
+          'user2Id': _matchedUserId,
+          'createdAt': FieldValue.serverTimestamp(), // İlk oluşturma zamanı
+          'lastMessageTime': FieldValue.serverTimestamp(), // Son mesaj zamanı
+          'lastMessageContent': _messageController.text
+              .trim(), // Son mesaj içeriği
+        },
+        SetOptions(merge: true), // Mevcut veriyi koru, yenisini ekle/güncelle
+      );
+      debugPrint('SingleChatScreen: Sohbet belgesi oluşturuldu/güncellendi.');
+
+      // 2. Mesajı sohbetin alt koleksiyonuna kaydet
       await _firestore
-          .collection('matches')
-          .doc(_matchId)
-          .collection('messages')
+          .collection('chats') // chats koleksiyonu
+          .doc(_chatId) // sohbet ID'si
+          .collection('messages') // messages alt koleksiyonu
           .add({
             'senderId': _currentUserId,
-            'receiverId': widget.matchedUser['uid'],
+            'receiverId': _matchedUserId,
             'content': _messageController.text.trim(),
             'timestamp': FieldValue.serverTimestamp(),
           });
-      _messageController
-          .clear(); // Mesaj gönderildikten sonra metin kutusunu temizle
+      _messageController.clear();
       debugPrint('SingleChatScreen: Mesaj gönderildi.');
+
+      // ChatsScreen'de son mesajı güncellemek için matches koleksiyonunu da güncelle
+      // Bu, ChatsScreen'deki son mesaj önizlemesini doğru gösterecek.
+      // Eşleşme ID'sini bulup güncelleyelim.
+      String user1IdForMatch = _currentUserId!.compareTo(_matchedUserId!) < 0
+          ? _currentUserId!
+          : _matchedUserId!;
+      String user2IdForMatch = _currentUserId!.compareTo(_matchedUserId!) < 0
+          ? _matchedUserId!
+          : _currentUserId!;
+
+      QuerySnapshot matchQuery = await _firestore
+          .collection('matches')
+          .where('user1Id', isEqualTo: user1IdForMatch)
+          .where('user2Id', isEqualTo: user2IdForMatch)
+          .get();
+
+      if (matchQuery.docs.isNotEmpty) {
+        await _firestore
+            .collection('matches')
+            .doc(matchQuery.docs.first.id)
+            .update({
+              'lastMessageTime': FieldValue.serverTimestamp(),
+              'lastMessageContent': _messageController.text.trim(),
+            });
+        debugPrint('SingleChatScreen: Matches belgesi güncellendi.');
+      }
     } catch (e) {
       debugPrint('SingleChatScreen: Mesaj gönderilirken hata: $e');
-      ScaffoldMessenger.of(
+      SnackBarService.showSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Mesaj gönderilemedi: $e')));
+        message: 'Mesaj gönderilemedi: ${e.toString()}',
+        type: SnackBarType.error,
+      );
     }
   }
 
@@ -117,7 +138,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
         margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
         padding: const EdgeInsets.all(12.0),
         decoration: BoxDecoration(
-          color: isMe ? Theme.of(context).primaryColor : Colors.grey[300],
+          color: isMe
+              ? AppColors.primaryYellow.withOpacity(0.8)
+              : AppColors.grey.withOpacity(0.3), // Renk paletinden
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(15),
             topRight: const Radius.circular(15),
@@ -131,7 +154,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
         ),
         child: Text(
           messageData['content'],
-          style: TextStyle(color: isMe ? Colors.black : Colors.black87),
+          style: TextStyle(
+            color: isMe ? AppColors.black : AppColors.primaryText,
+          ), // Renk paletinden
         ),
       ),
     );
@@ -142,7 +167,7 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
     final String name = widget.matchedUser['name'] ?? 'Sohbet Partneri';
     final String profileImageUrl =
         widget.matchedUser['profileImageUrl'] ??
-        'https://via.placeholder.com/150';
+        'https://placehold.co/150x150/CCCCCC/000000?text=Profil';
 
     return Scaffold(
       appBar: AppBar(
@@ -151,7 +176,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
             CircleAvatar(
               radius: 16,
               backgroundImage: NetworkImage(profileImageUrl),
-              backgroundColor: Colors.grey[200],
+              backgroundColor: AppColors.grey.withOpacity(
+                0.2,
+              ), // Renk paletinden
             ),
             const SizedBox(width: 8),
             Text(name),
@@ -162,12 +189,24 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
             icon: const Icon(Icons.call), // Sesli arama
             onPressed: () {
               debugPrint('Sesli arama tıklandı');
+              SnackBarService.showSnackBar(
+                // SnackBarService eklendi
+                context,
+                message: 'Sesli arama özelliği yakında eklenecek!',
+                type: SnackBarType.info,
+              );
             },
           ),
           IconButton(
             icon: const Icon(Icons.video_call), // Görüntülü arama
             onPressed: () {
               debugPrint('Görüntülü arama tıklandı');
+              SnackBarService.showSnackBar(
+                // SnackBarService eklendi
+                context,
+                message: 'Görüntülü arama özelliği yakında eklenecek!',
+                type: SnackBarType.info,
+              );
             },
           ),
         ],
@@ -175,15 +214,15 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _matchId == null
+            child: _chatId == null
                 ? const Center(
                     child: CircularProgressIndicator(),
-                  ) // Match ID bekleniyor
+                  ) // Chat ID bekleniyor
                 : StreamBuilder<QuerySnapshot>(
                     stream: _firestore
-                        .collection('matches')
-                        .doc(_matchId)
-                        .collection('messages')
+                        .collection('chats') // chats koleksiyonu
+                        .doc(_chatId) // sohbet ID'si
+                        .collection('messages') // messages alt koleksiyonu
                         .orderBy(
                           'timestamp',
                           descending: true,
@@ -197,6 +236,9 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                         return Center(
                           child: Text(
                             'Mesajlar yüklenirken hata: ${snapshot.error}',
+                            style: TextStyle(
+                              color: AppColors.red,
+                            ), // Renk paletinden
                           ),
                         );
                       }
@@ -246,8 +288,11 @@ class _SingleChatScreenState extends State<SingleChatScreen> {
                 FloatingActionButton(
                   onPressed: _sendMessage,
                   mini: true,
-                  backgroundColor: Theme.of(context).primaryColor,
-                  child: const Icon(Icons.send, color: Colors.black),
+                  backgroundColor: AppColors.primaryYellow, // Renk paletinden
+                  child: const Icon(
+                    Icons.send,
+                    color: AppColors.black,
+                  ), // Renk paletinden
                 ),
               ],
             ),

@@ -25,8 +25,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   bool _isLoading = false;
 
   DocumentSnapshot? _lastDocument;
+  // O anki oturumda görülen kullanıcıların ID'lerini tutacak liste (Firebase sorgusu için değil, UI'da tekrarları önlemek için)
   final List<String> _seenUserIds = [];
 
+  // Firebase'den çekilecek başka profil kalmadığını belirtir (sorgu boş döndüğünde true olur)
   bool _noMoreProfilesToFetch = false;
 
   FilterCriteria _currentFilters = FilterCriteria(); // Varsayılan boş filtreler
@@ -40,6 +42,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   @override
   bool get wantKeepAlive => true;
 
+  // Kullanıcı profillerini Firestore'dan çeken ana fonksiyon
   Future<void> _fetchUserProfiles({
     bool isInitialLoad = false,
     bool isRefresh = false,
@@ -52,7 +55,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
     if (isRefresh) {
       _userProfiles.clear();
-      _seenUserIds.clear();
+      // _seenUserIds.clear(); // BU SATIR KALDIRILDI: isRefresh'te seenUserIds'i temizleme!
       _lastDocument = null;
       _noMoreProfilesToFetch = false;
       debugPrint(
@@ -103,7 +106,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       }
       // --- Filtreleme sonu ---
 
-      query = query.limit(10); // Limit, filtreler eklendikten sonra uygulanmalı
+      query = query.limit(10);
 
       if (_lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
