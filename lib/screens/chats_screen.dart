@@ -1,4 +1,4 @@
-// lib/src/screens/chat/chats_screen.dart
+// lib/screens/chats_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -77,15 +77,15 @@ class _ChatsScreenState extends State<ChatsScreen> {
       ];
 
       for (var matchDoc in allMatches) {
-        String otherUid = (matchDoc.get('user1Id') == currentUser.uid)
-            ? matchDoc.get('user2Id')
-            : matchDoc.get('user1Id');
+        final String user1Id = matchDoc.get('user1Id') as String;
+        final String user2Id = matchDoc.get('user2Id') as String;
+        String otherUid = (user1Id == currentUser.uid) ? user2Id : user1Id;
         matchedUids.add(otherUid);
       }
 
       int currentLikesCount = 0;
       for (var likeDoc in likesSnapshot.docs) {
-        String likerId = likeDoc.get('likerId');
+        final String likerId = likeDoc.get('likerId') as String;
         if (!matchedUids.contains(likerId)) {
           // Eğer beğenen kişiyle henüz eşleşme yoksa sayacı artır
           currentLikesCount++;
@@ -97,9 +97,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
       List<DocumentSnapshot> newOnes = [];
 
       for (var matchDoc in allMatches) {
-        final chatDocId =
-            _getChatId(matchDoc.get('user1Id'), matchDoc.get('user2Id'));
-        final messages = await _firestore
+        final String matchDocUser1Id = matchDoc.get('user1Id') as String;
+        final String matchDocUser2Id = matchDoc.get('user2Id') as String;
+        final String chatDocId = _getChatId(matchDocUser1Id, matchDocUser2Id);
+        final QuerySnapshot messages = await _firestore
             .collection('chats')
             .doc(chatDocId)
             .collection('messages')
@@ -148,9 +149,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .where('read', isEqualTo: false)
         .snapshots()
         .listen((snapshot) {
-      setState(() {
-        _incomingCompliments = snapshot.docs;
-      });
+      if (mounted) {
+        // Mounted kontrolü eklendi (pro'nuzdan gelen iyileştirme)
+        setState(() {
+          _incomingCompliments = snapshot.docs;
+        });
+      }
       debugPrint(
           'ChatsScreen: Gelen Compliment sayısı: ${_incomingCompliments.length}');
     }, onError: (error) {
@@ -165,9 +169,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
-    final senderId = complimentDoc.get('senderId');
-    final comment = complimentDoc.get('comment');
-    final complimentId = complimentDoc.id;
+    final String senderId = complimentDoc.get('senderId') as String;
+    final String comment = complimentDoc.get('comment') as String;
+    final String complimentId = complimentDoc.id;
 
     try {
       final batch = _firestore.batch();
@@ -177,7 +181,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       String user2Id =
           currentUser.uid.compareTo(senderId) < 0 ? senderId : currentUser.uid;
 
-      final chatDocRef =
+      final DocumentReference chatDocRef =
           _firestore.collection('chats').doc(_getChatId(user1Id, user2Id));
 
       batch.set(
@@ -238,7 +242,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
-    final complimentId = complimentDoc.id;
+    final String complimentId = complimentDoc.id;
 
     try {
       await _firestore.collection('compliments').doc(complimentId).update({
@@ -279,7 +283,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         onButtonPressed: () {
           Provider.of<TabNavigationProvider>(context, listen: false)
               .setIndex(1);
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          // Navigator.of(context).popUntil((route) => route.isFirst); // Bu satır problem yaratabilir, genellikle tab değişiminde pop gerekmez.
         },
       );
     }
@@ -316,10 +320,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: InkWell(
                 onTap: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const LikedYouScreen()));
+                  Provider.of<TabNavigationProvider>(context, listen: false)
+                      .setIndex(3); // Liked You tab'ının index'i 3
                 },
                 child: Row(
                   children: [
@@ -355,105 +357,112 @@ class _ChatsScreenState extends State<ChatsScreen> {
                           .titleMedium
                           ?.copyWith(color: AppColors.primaryText),
                     ),
+                    const Spacer(),
                     Icon(Icons.arrow_forward_ios,
                         size: 16, color: AppColors.secondaryText),
                   ],
                 ),
               ),
             ),
-            if (_newMatches.isNotEmpty)
-              SizedBox(
-                height: 80,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _newMatches.length,
-                  itemBuilder: (context, index) {
-                    final matchDoc = _newMatches[index];
-                    final String user1Id = matchDoc.get('user1Id');
-                    final String user2Id = matchDoc.get('user2Id');
-                    final String otherUserUid =
-                        (user1Id == _auth.currentUser!.uid) ? user2Id : user1Id;
+            _newMatches.isNotEmpty
+                ? SizedBox(
+                    // Eğer _newMatches boş değilse bu widget
+                    height: 80,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _newMatches.length,
+                      itemBuilder: (context, index) {
+                        final matchDoc = _newMatches[index];
+                        final String user1Id =
+                            matchDoc.get('user1Id') as String;
+                        final String user2Id =
+                            matchDoc.get('user2Id') as String;
+                        final String otherUserUid =
+                            (user1Id == _auth.currentUser!.uid)
+                                ? user2Id
+                                : user1Id;
 
-                    return FutureBuilder<DocumentSnapshot>(
-                      future: _firestore
-                          .collection('users')
-                          .doc(otherUserUid)
-                          .get(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: CircleAvatar(
-                                radius: 30,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2)),
-                          );
-                        }
-                        if (snapshot.hasError ||
-                            !snapshot.hasData ||
-                            !snapshot.data!.exists) {
-                          return const SizedBox.shrink();
-                        }
-                        final otherUserData =
-                            snapshot.data!.data() as Map<String, dynamic>;
-                        final otherUserName =
-                            otherUserData['name'] ?? 'Bilinmiyor';
-                        final otherUserProfileImageUrl =
-                            otherUserData['profileImageUrl'] ??
-                                'https://via.placeholder.com/150';
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: Column(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      AppColors.accentPink,
-                                      AppColors.primaryYellow
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                ),
+                        return FutureBuilder<DocumentSnapshot>(
+                          future: _firestore
+                              .collection('users')
+                              .doc(otherUserUid)
+                              .get(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8.0),
                                 child: CircleAvatar(
-                                  radius: 28,
-                                  backgroundImage:
-                                      NetworkImage(otherUserProfileImageUrl),
-                                ),
+                                    radius: 30,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)),
+                              );
+                            }
+                            if (snapshot.hasError ||
+                                !snapshot.hasData ||
+                                !snapshot.data!.exists) {
+                              return const SizedBox.shrink();
+                            }
+                            final otherUserData =
+                                snapshot.data!.data() as Map<String, dynamic>;
+                            final otherUserName =
+                                otherUserData['name'] ?? 'Bilinmiyor';
+                            final otherUserProfileImageUrl =
+                                otherUserData['profileImageUrl'] ??
+                                    'https://via.placeholder.com/150';
+
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          AppColors.accentPink,
+                                          AppColors.primaryYellow
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 28,
+                                      backgroundImage: NetworkImage(
+                                          otherUserProfileImageUrl),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    otherUserName.split(' ')[0],
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                otherUserName.split(' ')[0],
-                                style: Theme.of(context).textTheme.bodySmall,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                ),
-              ), // <<<--- VİRGÜL BURAYA EKLENDİ (Önceki hatadan kaynaklı eksiklikti)
-            else
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Text(
-                'Yeni eşleşmen yok. Keşfetmeye devam et!',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: AppColors.secondaryText),
-              ),
-            ),
+                    ),
+                  )
+                : Padding(
+                    // Eğer _newMatches boşsa bu widget
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8.0),
+                    child: Text(
+                      'Yeni eşleşmen yok. Keşfetmeye devam et!',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: AppColors.secondaryText),
+                    ),
+                  ),
             const Divider(),
-
             if (_incomingCompliments.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -477,8 +486,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       itemCount: _incomingCompliments.length,
                       itemBuilder: (context, index) {
                         final complimentDoc = _incomingCompliments[index];
-                        final senderId = complimentDoc.get('senderId');
-                        final comment = complimentDoc.get('comment');
+                        final String senderId =
+                            complimentDoc.get('senderId') as String;
+                        final String comment =
+                            complimentDoc.get('comment') as String;
 
                         return FutureBuilder<DocumentSnapshot>(
                           future: _firestore
@@ -520,8 +531,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                               NetworkImage(senderImageUrl),
                                         ),
                                         const SizedBox(height: 10),
-                                        Text(comment,
-                                            textAlign: TextAlign.center),
+                                        Text('"$comment"',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                                fontStyle: FontStyle.italic)),
                                       ],
                                     ),
                                     actions: [
@@ -539,42 +552,42 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                           _acceptCompliment(complimentDoc);
                                           Navigator.pop(dialogContext);
                                         },
-                                        child: const Text('Kabul Et',
-                                            style: TextStyle(
-                                                color: AppColors.accentTeal)),
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                AppColors.accentTeal),
+                                        child: const Text('Kabul Et ve Eşleş'),
                                       ),
                                     ],
                                   ),
                                 );
                               },
                               child: Card(
-                                margin: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 4.0, vertical: 8.0),
                                 child: Container(
                                   width: 100,
                                   padding: const EdgeInsets.all(8),
                                   child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       CircleAvatar(
-                                        radius: 25,
-                                        backgroundImage:
-                                            NetworkImage(senderImageUrl),
+                                        radius: 28,
+                                        backgroundImage: NetworkImage(
+                                            senderImageUrl), // <<< BURASI DÜZELTİLDİ
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         senderName.split(' ')[0],
                                         style: Theme.of(context)
                                             .textTheme
-                                            .bodySmall,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        'Yorum',
-                                        style: Theme.of(context)
-                                            .textTheme
                                             .bodySmall
                                             ?.copyWith(
-                                                color: AppColors.secondaryText),
+                                                fontWeight: FontWeight.bold),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
+                                      const SizedBox(height: 2),
+                                      Icon(Icons.mail_outline,
+                                          size: 16, color: AppColors.accentPink)
                                     ],
                                   ),
                                 ),
@@ -588,7 +601,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 ],
               ),
             const Divider(),
-
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
@@ -619,8 +631,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     itemCount: _messagedMatches.length,
                     itemBuilder: (context, index) {
                       final matchDoc = _messagedMatches[index];
-                      final String user1Id = matchDoc.get('user1Id');
-                      final String user2Id = matchDoc.get('user2Id');
+                      final String user1Id = matchDoc.get('user1Id') as String;
+                      final String user2Id = matchDoc.get('user2Id') as String;
                       final String otherUserUid =
                           (user1Id == _auth.currentUser!.uid)
                               ? user2Id
@@ -686,11 +698,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
                                           ?.copyWith(
                                               color: AppColors.secondaryText));
                                 }
-                                final lastMessageContent =
-                                    msgSnapshot.data!.docs.first.get('content');
+                                final String lastMessageContent =
+                                    msgSnapshot.data!.docs.first.get('content')
+                                        as String;
                                 final Timestamp timestamp = msgSnapshot
                                     .data!.docs.first
-                                    .get('timestamp');
+                                    .get('timestamp') as Timestamp;
                                 final DateTime dateTime = timestamp.toDate();
                                 final String formattedTime =
                                     '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
