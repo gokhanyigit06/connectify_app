@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
-import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService için
+import 'package:connectify_app/utils/app_colors.dart';
+import 'package:connectify_app/services/snackbar_service.dart';
 import 'package:connectify_app/screens/single_chat_screen.dart'; // Sohbet ekranına yönlendirme için
-import 'package:provider/provider.dart'; // Provider için
-import 'package:connectify_app/providers/tab_navigation_provider.dart'; // Sekme değiştirmek için
+import 'package:provider/provider.dart';
+import 'package:connectify_app/providers/tab_navigation_provider.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Current user UID için
 
 class MatchFoundScreen extends StatelessWidget {
-  final Map<String, dynamic> currentUserProfile; // Mevcut kullanıcının profili
-  final Map<String, dynamic>
-  matchedUserProfile; // Eşleşilen kullanıcının profili
+  final Map<String, dynamic> currentUserProfile;
+  final Map<String, dynamic> matchedUserProfile;
 
   const MatchFoundScreen({
     super.key,
@@ -16,19 +16,38 @@ class MatchFoundScreen extends StatelessWidget {
     required this.matchedUserProfile,
   });
 
+  // Chat ID'sini oluşturmak için yardımcı metod (chats_screen'den kopyalandı)
+  String _getChatId(String uid1, String uid2) {
+    return uid1.compareTo(uid2) < 0 ? '${uid1}_$uid2' : '${uid2}_$uid1';
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Mevcut kullanıcının UID'si lazım olacak (sohbeti başlatırken)
+    final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) {
+      // Eğer kullanıcı UID'si alınamazsa hata veya geri dön
+      return Scaffold(
+        body: Center(child: Text('Kullanıcı bilgisi alınamadı.')),
+      );
+    }
+
     final String currentUserName = currentUserProfile['name'] ?? 'Sen';
     final String currentUserProfileImageUrl =
         currentUserProfile['profileImageUrl'] ??
-        'https://placehold.co/150x150/CCCCCC/000000?text=Sen';
+            'https://placehold.co/150x150/CCCCCC/000000?text=Sen';
     final String matchedUserName = matchedUserProfile['name'] ?? 'Bilinmeyen';
+    final String matchedUserUid =
+        matchedUserProfile['uid'] ?? ''; // Eşleşilen kullanıcının UID'si
     final String matchedUserProfileImageUrl =
         matchedUserProfile['profileImageUrl'] ??
-        'https://placehold.co/150x150/CCCCCC/000000?text=Eşleşen';
+            'https://placehold.co/150x150/CCCCCC/000000?text=Eşleşen';
+
+    // Chat ID'sini oluştur
+    final String chatId = _getChatId(currentUserId, matchedUserUid);
 
     return Scaffold(
-      backgroundColor: AppColors.background, // Arka plan rengi
+      backgroundColor: AppColors.background,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -46,43 +65,34 @@ class MatchFoundScreen extends StatelessWidget {
               ),
               const SizedBox(height: 30),
 
-              // Profil Resimleri ve Çapraz Efekt
               SizedBox(
-                height: 200, // Yükseklik ver
+                height: 200,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Eşleşilen Kullanıcının Profili (Sol üstten sağ alta doğru)
                     Positioned(
                       top: 0,
                       left: 0,
                       child: Transform.rotate(
-                        // Hafif rotasyon
-                        angle: -0.2, // Yaklaşık -11 derece
+                        angle: -0.2,
                         child: _buildProfileCard(
                           context,
                           imageUrl: matchedUserProfileImageUrl,
                           name: matchedUserName,
-                          color: AppColors.accentPink.withOpacity(
-                            0.8,
-                          ), // Pembe ton
+                          color: AppColors.accentPink.withOpacity(0.8),
                         ),
                       ),
                     ),
-                    // Mevcut Kullanıcının Profili (Sağ alttan sol üste doğru)
                     Positioned(
                       bottom: 0,
                       right: 0,
                       child: Transform.rotate(
-                        // Hafif rotasyon
-                        angle: 0.2, // Yaklaşık 11 derece
+                        angle: 0.2,
                         child: _buildProfileCard(
                           context,
                           imageUrl: currentUserProfileImageUrl,
                           name: currentUserName,
-                          color: AppColors.primaryYellow.withOpacity(
-                            0.8,
-                          ), // Sarı ton
+                          color: AppColors.primaryYellow.withOpacity(0.8),
                         ),
                       ),
                     ),
@@ -98,35 +108,36 @@ class MatchFoundScreen extends StatelessWidget {
               ),
               const SizedBox(height: 30),
 
-              // Mesaj Gönder Butonu
+              // Mesaj Gönder Butonu - Düzeltildi
               ElevatedButton.icon(
                 onPressed: () {
-                  // Sohbet ekranına yönlendir
+                  // Sohbet ekranına yönlendir - Doğru parametrelerle
                   Navigator.of(context).pushReplacement(
+                    // pushReplacement ile bu ekranı kapat
                     MaterialPageRoute(
-                      builder: (context) =>
-                          SingleChatScreen(matchedUser: matchedUserProfile),
+                      builder: (context) => SingleChatScreen(
+                        chatId: chatId, // Doğru parametre adı ve değeri
+                        otherUserUid:
+                            matchedUserUid, // Doğru parametre adı ve değeri
+                        otherUserName:
+                            matchedUserName, // Doğru parametre adı ve değeri
+                      ),
                     ),
                   );
                 },
-                icon: const Icon(
-                  Icons.message_outlined,
-                  color: AppColors.white,
-                ),
+                icon:
+                    const Icon(Icons.message_outlined, color: AppColors.white),
                 label: Text(
                   '${matchedUserName} ile Sohbeti Başlat',
                   style: const TextStyle(fontSize: 18),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accentPink, // Vurgu rengi
-                  foregroundColor: AppColors.white, // Beyaz metin
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 30,
-                    vertical: 15,
-                  ),
+                  backgroundColor: AppColors.accentPink,
+                  foregroundColor: AppColors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
+                      borderRadius: BorderRadius.circular(15)),
                 ),
               ),
               const SizedBox(height: 16),
@@ -134,13 +145,8 @@ class MatchFoundScreen extends StatelessWidget {
               // Keşfetmeye Devam Et Butonu
               TextButton(
                 onPressed: () {
-                  // BottomNavigationBar'da Keşfet sekmesine git (index 1)
-                  // Eğer bu ekran Navigator.pushReplacement ile açılırsa, önceki ekranı kaldıracağı için
-                  // doğrudan tab değişimini tetiklememiz gerekir.
-                  Provider.of<TabNavigationProvider>(
-                    context,
-                    listen: false,
-                  ).setIndex(1);
+                  Provider.of<TabNavigationProvider>(context, listen: false)
+                      .setIndex(1);
                   Navigator.of(context).pop(); // Bu ekranı kapat
                 },
                 child: Text(
@@ -159,7 +165,6 @@ class MatchFoundScreen extends StatelessWidget {
     );
   }
 
-  // Profil resmi ve ismini içeren kart (Avatar benzeri)
   Widget _buildProfileCard(
     BuildContext context, {
     required String imageUrl,
@@ -167,11 +172,11 @@ class MatchFoundScreen extends StatelessWidget {
     required Color color,
   }) {
     return Container(
-      width: 150, // Sabit genişlik
-      height: 150, // Sabit yükseklik
+      width: 150,
+      height: 150,
       decoration: BoxDecoration(
-        color: color, // Arka plan rengi
-        borderRadius: BorderRadius.circular(15), // Yuvarlak köşeler
+        color: color,
+        borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -202,7 +207,7 @@ class MatchFoundScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Text(
-                name.split(' ')[0], // Sadece ilk ismi göster
+                name.split(' ')[0],
                 style: const TextStyle(
                   color: AppColors.white,
                   fontWeight: FontWeight.bold,

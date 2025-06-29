@@ -1,10 +1,11 @@
+// lib/screens/live_chat_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:connectify_app/screens/single_chat_screen.dart'; // Sohbet başlatmak için
-import 'package:connectify_app/screens/home_screen.dart'; // Premium'a yönlendirme için (şimdilik)
-import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService import edildi
-import 'package:connectify_app/utils/app_colors.dart'; // Renk paletimiz için
+import 'package:connectify_app/screens/single_chat_screen.dart';
+import 'package:connectify_app/services/snackbar_service.dart';
+import 'package:connectify_app/utils/app_colors.dart';
+import 'package:connectify_app/screens/premium/premium_screen.dart';
 
 class LiveChatScreen extends StatefulWidget {
   const LiveChatScreen({super.key});
@@ -17,15 +18,13 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  bool _isPremiumUser = false; // Kullanıcının premium durumu
-  bool _isSearching = false; // Eşleşme aranıyor mu
-  String? _selectedGenderFilter; // Filtreler
+  bool _isPremiumUser = false;
+  bool _isSearching = false;
+  String? _selectedGenderFilter;
   int? _minAgeFilter;
   int? _maxAgeFilter;
-  TextEditingController _locationFilterController =
-      TextEditingController(); // Yeni: Konum filtresi controller
+  TextEditingController _locationFilterController = TextEditingController();
 
-  // Cinsiyet seçenekleri
   final List<String> _genders = ['Kadın', 'Erkek', 'Fark Etmez'];
 
   @override
@@ -36,20 +35,17 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
 
   @override
   void dispose() {
-    _locationFilterController.dispose(); // Controller'ı dispose et
+    _locationFilterController.dispose();
     super.dispose();
   }
 
-  // Kullanıcının premium durumunu Firestore'dan çek
   Future<void> _checkUserPremiumStatus() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
     try {
-      DocumentSnapshot userDoc = await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         setState(() {
           _isPremiumUser =
@@ -62,7 +58,10 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
     }
   }
 
-  // Rastgele sohbet başlatma fonksiyonu
+  String _getChatId(String uid1, String uid2) {
+    return uid1.compareTo(uid2) < 0 ? '${uid1}_$uid2' : '${uid2}_$uid1';
+  }
+
   Future<void> _startRandomChat() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
@@ -72,8 +71,16 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
         context,
         message: 'Rastgele sohbet Premium özelliğidir.',
         type: SnackBarType.info,
+        actionLabel: 'Premium Ol',
+        onActionPressed: () {
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => PremiumScreen(
+                        message: 'Rastgele sohbet için Premium olun!',
+                      )));
+        },
       );
-      _upgradeToPremium();
       return;
     }
 
@@ -89,110 +96,105 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
     );
 
     try {
-      // 1. Yeni bir sohbet oturumu oluştur (bekleme modunda)
-      DocumentReference newSessionRef = await _firestore
-          .collection('random_chat_sessions')
-          .add({
-            'participant1Id': currentUser.uid,
-            'participant2Id': null,
-            'status': 'waiting',
-            'startTime': FieldValue.serverTimestamp(),
-            'filters': {
-              'gender': _selectedGenderFilter,
-              'minAge': _minAgeFilter,
-              'maxAge': _maxAgeFilter,
-              'location': _locationFilterController.text.trim().isNotEmpty
-                  ? _locationFilterController.text.trim()
-                  : null, // Yeni: Konum filtresi eklendi
-            },
-          });
+      DocumentReference newSessionRef =
+          await _firestore.collection('random_chat_sessions').add({
+        'participant1Id': currentUser.uid,
+        'participant2Id': null,
+        'status': 'waiting',
+        'startTime': FieldValue.serverTimestamp(),
+        'filters': {
+          'gender': _selectedGenderFilter,
+          'minAge': _minAgeFilter,
+          'maxAge': _maxAgeFilter,
+          'location': _locationFilterController.text.trim().isNotEmpty
+              ? _locationFilterController.text.trim()
+              : null,
+        },
+      });
       debugPrint(
-        'LiveChatScreen: Yeni sohbet oturumu oluşturuldu: ${newSessionRef.id}',
-      );
+          'LiveChatScreen: Yeni sohbet oturumu oluşturuldu: ${newSessionRef.id}');
 
-      // 2. Diğer kullanıcıları dinle veya bir eşleşme bulmaya çalış
-      // Bu kısım normalde bir Cloud Function veya backend tarafından yönetilir.
-      // Şimdilik basit bir simülasyon yapalım:
-      // Sürekli olarak 'waiting' durumundaki oturumları dinle ve eşleşme olunca yönlendir.
-      // Firestore dinleme için Cloud Function tarafında filtreleme daha verimli olacaktır.
-      // Arama mantığı karmaşıklaşabilir, gerçek bir uygulama için Cloud Functions kullanılması önerilir.
       _firestore
           .collection('random_chat_sessions')
           .where('status', isEqualTo: 'waiting')
           .where('participant1Id', isNotEqualTo: currentUser.uid)
           .snapshots()
           .listen((snapshot) async {
-            if (_isSearching && snapshot.docs.isNotEmpty) {
-              for (var doc in snapshot.docs) {
-                // Sadece eşleşmemiş ve mevcut filtrelerle uyumlu oturumları bul
-                bool genderMatch =
-                    _selectedGenderFilter == null ||
-                    _selectedGenderFilter == 'Fark Etmez' ||
-                    doc['filters']['gender'] == null ||
-                    doc['filters']['gender'] == 'Fark Etmez' ||
-                    doc['filters']['gender'] == _selectedGenderFilter;
-                bool minAgeMatch =
-                    _minAgeFilter == null ||
-                    (doc['filters']['minAge'] == null ||
-                        doc['filters']['minAge'] <=
-                            _maxAgeFilter!); // Karşıdaki kişinin yaşı bizim aralığımızdaysa
-                bool maxAgeMatch =
-                    _maxAgeFilter == null ||
-                    (doc['filters']['maxAge'] == null ||
-                        doc['filters']['maxAge'] >=
-                            _minAgeFilter!); // Karşıdaki kişinin yaşı bizim aralığımızdaysa
-                bool locationMatch =
-                    _locationFilterController.text.trim().isEmpty ||
-                    doc['filters']['location'] == null ||
-                    doc['filters']['location'] ==
-                        _locationFilterController.text.trim();
+        if (_isSearching && snapshot.docs.isNotEmpty) {
+          for (var doc in snapshot.docs) {
+            final sessionData = doc.data() as Map<String, dynamic>;
+            final Map<String, dynamic> filters =
+                sessionData['filters'] as Map<String, dynamic>;
 
-                if (doc['participant2Id'] == null &&
-                    genderMatch &&
-                    minAgeMatch &&
-                    maxAgeMatch &&
-                    locationMatch) {
-                  await _firestore
-                      .collection('random_chat_sessions')
-                      .doc(doc.id)
-                      .update({
-                        'participant2Id': currentUser.uid,
-                        'status': 'active',
-                      });
-                  debugPrint('LiveChatScreen: Eşleşme bulundu: ${doc.id}');
-                  setState(() {
-                    _isSearching = false;
-                  });
-                  DocumentSnapshot matchedUserProfile = await _firestore
-                      .collection('users')
-                      .doc(doc['participant1Id'])
-                      .get();
-                  if (matchedUserProfile.exists) {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (context) => SingleChatScreen(
-                          matchedUser:
-                              matchedUserProfile.data() as Map<String, dynamic>,
-                        ),
-                      ),
-                    );
-                  } else {
-                    debugPrint(
-                      'LiveChatScreen: Eşleşen kullanıcının profili bulunamadı.',
-                    );
-                    SnackBarService.showSnackBar(
-                      context,
-                      message: 'Eşleşme bulundu ancak profil yüklenemedi.',
-                      type: SnackBarType.error,
-                    );
-                  }
-                  return;
-                }
+            bool genderMatch = _selectedGenderFilter == null ||
+                _selectedGenderFilter == 'Fark Etmez' ||
+                filters['gender'] == null ||
+                filters['gender'] == 'Fark Etmez' ||
+                filters['gender'] == _selectedGenderFilter;
+            bool minAgeMatch = _minAgeFilter == null ||
+                (filters['minAge'] == null ||
+                    filters['minAge'] <= (_maxAgeFilter ?? 999));
+            bool maxAgeMatch = _maxAgeFilter == null ||
+                (filters['maxAge'] == null ||
+                    filters['maxAge'] >= (_minAgeFilter ?? 0));
+            bool locationMatch = _locationFilterController.text
+                    .trim()
+                    .isEmpty ||
+                filters['location'] == null ||
+                filters['location'] == _locationFilterController.text.trim();
+
+            if (sessionData['participant2Id'] == null &&
+                genderMatch &&
+                minAgeMatch &&
+                maxAgeMatch &&
+                locationMatch) {
+              await _firestore
+                  .collection('random_chat_sessions')
+                  .doc(doc.id)
+                  .update({
+                'participant2Id': currentUser.uid,
+                'status': 'active',
+              });
+              debugPrint('LiveChatScreen: Eşleşme bulundu: ${doc.id}');
+              setState(() {
+                _isSearching = false;
+              });
+
+              final String otherUserUid = sessionData['participant1Id'];
+              DocumentSnapshot matchedUserProfileDoc =
+                  await _firestore.collection('users').doc(otherUserUid).get();
+
+              if (matchedUserProfileDoc.exists) {
+                // HATA DÜZELTİLDİ: matchedUserProfileDoc.data()'yı Map'e cast et
+                final Map<String, dynamic>? matchedUserData =
+                    matchedUserProfileDoc.data() as Map<String, dynamic>?;
+                final matchedUserName =
+                    matchedUserData?['name'] ?? 'Bilinmiyor';
+
+                final chatId = _getChatId(currentUser.uid, otherUserUid);
+
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => SingleChatScreen(
+                      chatId: chatId,
+                      otherUserUid: otherUserUid,
+                      otherUserName: matchedUserName,
+                    ),
+                  ),
+                );
+              } else {
+                debugPrint(
+                    'LiveChatScreen: Eşleşen kullanıcının profili bulunamadı.');
+                SnackBarService.showSnackBar(context,
+                    message: 'Eşleşme bulundu ancak profil yüklenemedi.',
+                    type: SnackBarType.error);
               }
+              return;
             }
-          });
+          }
+        }
+      });
 
-      // Eğer eşleşme bulunamazsa veya timeout olursa: (Cloud Function yönetir)
       Future.delayed(const Duration(seconds: 10), () {
         if (_isSearching) {
           setState(() {
@@ -222,11 +224,12 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
 
   void _upgradeToPremium() {
     debugPrint('LiveChatScreen: Premium\'a yükselt tıklandı.');
-    SnackBarService.showSnackBar(
-      context,
-      message: 'Premium yükseltme ekranı buraya gelecek.',
-      type: SnackBarType.info,
-    );
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (context) => PremiumScreen(
+                  message: 'Rastgele sohbet için Premium olun!',
+                )));
   }
 
   @override
@@ -245,8 +248,6 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 30),
-
-              // Premium Değilse Uyarı
               if (!_isPremiumUser) ...[
                 Text(
                   'Bu özellik Connectify Premium üyelerine özeldir.',
@@ -254,7 +255,7 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                   style: TextStyle(
                     fontSize: 16,
                     color: AppColors.red,
-                  ), // Renk paletinden
+                  ),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
@@ -262,16 +263,14 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                   icon: const Icon(
                     Icons.star,
                     color: AppColors.black,
-                  ), // Renk paletinden
+                  ),
                   label: const Text('Premium Ol'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryYellow, // Renk paletinden
+                    backgroundColor: AppColors.primaryYellow,
                   ),
                 ),
                 const SizedBox(height: 30),
               ],
-
-              // Filtre Seçenekleri (Premium ise aktif)
               AbsorbPointer(
                 absorbing: !_isPremiumUser,
                 child: Opacity(
@@ -333,11 +332,8 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(
-                        height: 16,
-                      ), // Yeni: Konum alanı öncesi boşluk
+                      const SizedBox(height: 16),
                       TextFormField(
-                        // Yeni Konum Filtresi Alanı
                         controller: _locationFilterController,
                         decoration: InputDecoration(
                           labelText: 'Konum (Şehir)',
@@ -353,8 +349,6 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                   ),
                 ),
               ),
-
-              // Sohbet Başlat Butonu
               _isSearching
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
@@ -372,18 +366,13 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _isPremiumUser
-                            ? AppColors
-                                  .primaryYellow // Renk paletinden
-                            : AppColors
-                                  .grey, // Premium değilse gri (Renk paletinden)
-                        foregroundColor: _isPremiumUser
-                            ? AppColors
-                                  .black // Renk paletinden
-                            : AppColors.white, // Renk paletinden
+                            ? AppColors.primaryYellow
+                            : AppColors.grey,
+                        foregroundColor:
+                            _isPremiumUser ? AppColors.black : AppColors.white,
                       ),
                     ),
               const SizedBox(height: 20),
-              // Sohbeti iptal et butonu (sadece aranırken)
               if (_isSearching)
                 TextButton(
                   onPressed: () {
@@ -396,13 +385,12 @@ class _LiveChatScreenState extends State<LiveChatScreen> {
                       message: 'Sohbet araması iptal edildi.',
                       type: SnackBarType.info,
                     );
-                    // Oluşturulan oturumu temizle veya durumunu değiştir (Cloud Function yönetir)
                   },
                   child: Text(
                     'Aramayı İptal Et',
                     style: TextStyle(
                       color: AppColors.secondaryText,
-                    ), // Renk paletinden
+                    ),
                   ),
                 ),
             ],

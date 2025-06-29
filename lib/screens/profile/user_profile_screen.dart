@@ -1,3 +1,4 @@
+// lib/src/screens/profile/user_profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +6,7 @@ import 'package:connectify_app/screens/auth/welcome_screen.dart'; // Çıkış y
 import 'package:connectify_app/screens/profile/profile_setup_screen.dart'; // Profili düzenle ekranına yönlendirme
 import 'package:connectify_app/services/snackbar_service.dart'; // SnackBarService
 import 'package:connectify_app/utils/app_colors.dart'; // Renk paleti
+import 'package:connectify_app/screens/premium/premium_screen.dart'; // <<<--- YENİ: PremiumScreen için import
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -38,10 +40,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     try {
-      DocumentSnapshot userDoc = await _firestore
-          .collection('users')
-          .doc(currentUser.uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await _firestore.collection('users').doc(currentUser.uid).get();
 
       if (userDoc.exists) {
         setState(() {
@@ -101,9 +101,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
 
     if (_userProfileData == null) {
-      // Profil verisi yoksa veya hata oluştuysa profil oluşturma ekranına yönlendir
-      // AuthWrapper zaten bu kontrolü yapıyor, burası fazladan bir kontrol olabilir.
-      // Ya da kullanıcıya "Profil Oluştur" butonu gösterebiliriz.
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -115,7 +112,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
-                // Burada direkt ProfileSetupScreen'e yönlendiriyoruz
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const ProfileSetupScreen(),
@@ -133,17 +129,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final int age = _userProfileData!['age'] ?? 0;
     final String gender = _userProfileData!['gender'] ?? 'Belirtilmedi';
     final String bio = _userProfileData!['bio'] ?? 'Biyografi yok.';
-    final String location =
-        _userProfileData!['location'] ?? 'Belirtilmedi'; // Konum eklendi
+    final String location = _userProfileData!['location'] ?? 'Belirtilmedi';
     final List<String> interests = List<String>.from(
       _userProfileData!['interests'] ?? [],
     );
-    final String profileImageUrl =
-        _userProfileData!['profileImageUrl'] ??
+    final String profileImageUrl = _userProfileData!['profileImageUrl'] ??
         'https://placehold.co/150x150/CCCCCC/000000?text=Profil';
     final List<String> otherImageUrls = List<String>.from(
       _userProfileData!['otherImageUrls'] ?? [],
-    ); // Diğer fotoğraflar
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -152,14 +146,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () async {
-              // Profili düzenle ekranına yönlendir ve mevcut veriyi gönder
-              // initialData parametresi kaldırıldı, çünkü ProfileSetupScreen kendi verisini yüklüyor.
               await Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const ProfileSetupScreen(),
                 ),
               );
-              _fetchUserProfile(); // Düzenlemeden sonra profili yeniden çek
+              _fetchUserProfile();
             },
           ),
           IconButton(
@@ -195,7 +187,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               style: TextStyle(fontSize: 18, color: AppColors.secondaryText),
             ),
             const SizedBox(height: 8),
-            // Konum bilgisi eklendi
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -215,14 +206,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            // Biyografi
             Text(
               bio,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: AppColors.primaryText),
             ),
             const SizedBox(height: 20),
-            // İlgi Alanları
             if (interests.isNotEmpty)
               Column(
                 children: [
@@ -252,7 +241,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 ],
               ),
             const SizedBox(height: 20),
-            // Diğer Fotoğraflar
             if (otherImageUrls.isNotEmpty)
               Column(
                 children: [
@@ -266,7 +254,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: 120, // Fotoğraf galerisi için yükseklik
+                    height: 120,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: otherImageUrls.length,
@@ -282,14 +270,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) =>
                                   Container(
-                                    width: 100,
-                                    height: 100,
-                                    color: AppColors.grey.withOpacity(0.3),
-                                    child: Icon(
-                                      Icons.broken_image,
-                                      color: AppColors.red,
-                                    ),
-                                  ),
+                                width: 100,
+                                height: 100,
+                                color: AppColors.grey.withOpacity(0.3),
+                                child: Icon(
+                                  Icons.broken_image,
+                                  color: AppColors.red,
+                                ),
+                              ),
                             ),
                           ),
                         );
@@ -298,6 +286,30 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ),
                 ],
               ),
+            // <<<--- BURADAN SONRA YENİ BUTONU EKLEDİK
+            const SizedBox(height: 30),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PremiumScreen(
+                        message: 'Bu buton bir test içindir.'),
+                  ),
+                );
+              },
+              child: const Text('Premium Ekranını Aç (TEST)'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accentPink, // Rengi AppColors'tan al
+                foregroundColor: AppColors.white, // Yazı rengi
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+            // <<<--- YENİ BUTON BİTİŞ
           ],
         ),
       ),
